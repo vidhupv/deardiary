@@ -447,7 +447,30 @@ h1, h2, h3 {
   margin: 6px 0 0; max-width: 38ch;
   color: var(--muted); font-size: 13px;
 }
-.dd-dash-meta { display: flex; gap: 8px; align-items: baseline; }
+.dd-dash-meta { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* Refresh button in the dashboard header — same visual language as the call-me
+   pill in the top bar (outlined, ghost, accent glyph). */
+.dd-refresh {
+  appearance: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px 6px 10px; height: 28px;
+  border-radius: 999px;
+  background: transparent;
+  border: 0.5px solid var(--line);
+  color: var(--muted);
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.02em; text-transform: lowercase;
+  transition: border-color .15s, background .15s, color .15s, opacity .2s;
+}
+.dd-refresh:hover {
+  color: var(--ink); background: var(--surface);
+  border-color: color-mix(in oklab, var(--ink) 22%, transparent);
+}
+.dd-refresh:disabled { cursor: default; opacity: 0.55; }
+.dd-refresh-icon { color: var(--accent); flex-shrink: 0; transition: transform .6s ease; }
+.dd-refresh.spinning .dd-refresh-icon { animation: dd-spin 1s linear infinite; }
+@keyframes dd-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .dd-grid {
   display: grid;

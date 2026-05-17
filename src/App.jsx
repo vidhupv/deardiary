@@ -274,6 +274,7 @@ export function App() {
   const [railOpen, setRailOpen] = useState(false);
   const [sessions, setSessions] = useState(SESSIONS);
   const [cards, setCards] = useState(LIFEOS_CARDS);
+  const [refreshing, setRefreshing] = useState(false);
   const [agentPhone, setAgentPhone] = useState('(606) 555 — 0117');
 
   useEffect(() => { applyMode(mode); }, [mode]);
@@ -295,6 +296,24 @@ export function App() {
       fetchSessions().then((s) => { if (s) setSessions(s); });
       fetchCards().then((c) => { if (c) setCards(c); });
     }, 5000); // wait 5s for webhook to process
+  }, []);
+
+  // Trigger the backend's gen_cards pass and refetch on success. Catalog cards
+  // are reauthored from latest sessions; mini-apps are preserved by id with
+  // their accumulated state intact, so this is safe to call as often as needed.
+  const onRefreshCards = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await fetch('/api/regenerate-cards', { method: 'POST' });
+      if (r.ok) {
+        const fresh = await fetchCards();
+        if (fresh) setCards(fresh);
+      }
+    } catch {
+      // Backend unreachable — leave existing cards in place.
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   const onAddToToday = useCallback(async (text) => {
@@ -344,7 +363,7 @@ export function App() {
             onAddToToday={onAddToToday}
           />
         ) : (
-          <DashboardView cards={cards} />
+          <DashboardView cards={cards} onRefresh={onRefreshCards} refreshing={refreshing} />
         )}
       </div>
     </>

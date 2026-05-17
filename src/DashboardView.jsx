@@ -170,7 +170,26 @@ const KIND_TO_COMP = {
   app: ({ c }) => <MiniApp app={c} />,
 };
 
-export function DashboardView({ cards }) {
+function RefreshButton({ onClick, refreshing }) {
+  return (
+    <button
+      className={'dd-refresh ' + (refreshing ? 'spinning' : '')}
+      onClick={onClick}
+      disabled={refreshing}
+      aria-label="Regenerate Life OS cards"
+      title="Re-author the dashboard from your latest calls. Mini-apps keep their state."
+    >
+      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" className="dd-refresh-icon">
+        <path d="M13 8 A5 5 0 1 1 11.5 4.5 M13 4.5 L13 8 L9.5 8"
+              fill="none" stroke="currentColor" strokeWidth="1.6"
+              strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span>{refreshing ? 'authoring…' : 'refresh'}</span>
+    </button>
+  );
+}
+
+export function DashboardView({ cards, onRefresh, refreshing }) {
   return (
     <div className="dd-dash">
       <header className="dd-dash-h">
@@ -182,8 +201,7 @@ export function DashboardView({ cards }) {
         </div>
         <div className="dd-dash-meta dd-mono dd-dim">
           <span>{cards.length} cards</span>
-          <span>·</span>
-          <span>updated 2m ago</span>
+          {onRefresh && <RefreshButton onClick={onRefresh} refreshing={refreshing} />}
         </div>
       </header>
       <div className="dd-grid">

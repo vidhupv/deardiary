@@ -100,37 +100,56 @@ GRID SIZES: "reg" (4 cols), "wide" (8 cols), "tall" (4 cols × 2 rows). Use "wid
 
 PROMPT_TEMPLATE = """You are the Life OS card author for deardiary, a voice-first journaling app.
 
-Your job: read the user's recent sessions and behavioral patterns, then emit a fresh
-set of Life OS cards that reflect their actual life. Variety is good — a person card,
-a countdown, a themes card, and 1-3 mini-apps is usually right.
+Your job has TWO halves:
+  (A) Author a fresh batch of CATALOG cards (everything except kind="app")
+      from the user's recent sessions + patterns. These are stateless data
+      projections — they're regenerated from scratch every time.
+  (B) Optionally propose NEW mini-apps (kind="app") that don't already exist.
+      Existing mini-apps are preserved by id, with their accumulated state
+      intact, by the server. You MUST NOT re-author them — your job there is
+      only to decide whether the user needs additional ones.
 
 USER:
   name: {name}
   background: {background}
   current day in app: {current_day}
 
-PATTERNS YOUR VOICE AGENT HAS OBSERVED ABOUT THEM:
+PATTERNS YOUR VOICE AGENT HAS OBSERVED:
 {patterns}
 
 RECENT SESSIONS (most recent first):
 {sessions}
+
+EXISTING MINI-APPS (do NOT re-author these — they keep their state automatically):
+{existing_apps}
 
 {catalog}
 
 YOUR RULES:
 - Be specific to *this person*. Quote their words. Reference real things from their calls.
 - Don't be generic. "What you keep returning to" should contain phrases they actually said.
-- Mini-apps are for things that should update over time (habit, pipeline, recurring nudge).
-  Don't make a mini-app for a one-shot observation — use a catalog card.
-- 6-8 cards total. Don't pad. Don't repeat.
+- Mini-apps are for things that should update over time. Don't make a mini-app for a
+  one-shot observation — use a catalog card.
+- Only propose NEW mini-apps if the data clearly calls for one that doesn't already exist.
+  Most regenerations should add zero new mini-apps. It's fine to return an empty new_apps list.
+- 5-7 catalog cards is the sweet spot. Don't pad. Don't duplicate themes across cards.
 - Today is {today}. Use ISO dates (YYYY-MM-DD) for any date fields.
-- Output a single JSON array of card objects. Nothing else. No markdown fences, no commentary.
 
-JSON ARRAY:"""
+OUTPUT FORMAT: a single JSON object with two keys.
+
+{{
+  "catalog_cards": [ ...non-app cards... ],
+  "new_apps":      [ ...app cards with brand-new ids... ]
+}}
+
+No markdown fences, no commentary, just the JSON object."""
 
 
 async def generate_cards(memory: dict) -> list[dict]:
-    """Ask Claude to author cards from memory. Returns the parsed list."""
+    """
+    Author catalog cards (fresh) + optionally new mini-apps, merge with existing
+    mini-apps (state preserved). Returns the full new cards list.
+    """
     from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock, query
     from datetime import date
 
@@ -139,12 +158,16 @@ async def generate_cards(memory: dict) -> list[dict]:
     )
     patterns_text = "\n".join(f"  - {p}" for p in memory["patterns"]) or "  (none yet)"
 
+    existing_apps = [c for c in memory.get("cards", []) if c.get("kind") == "app"]
+    existing_apps_text = _summarize_existing_apps(existing_apps)
+
     prompt = PROMPT_TEMPLATE.format(
         name=memory["user"]["name"],
         background=memory["user"]["background"],
         current_day=memory["user"]["current_day"],
         patterns=patterns_text,
         sessions=sessions_text,
+        existing_apps=existing_apps_text,
         catalog=CATALOG_SPEC,
         today=date.today().isoformat(),
     )
@@ -152,7 +175,8 @@ async def generate_cards(memory: dict) -> list[dict]:
     options = ClaudeAgentOptions(
         system_prompt=(
             "You author Life OS cards from journal data. "
-            "You return ONLY a valid JSON array of card objects, no markdown, no commentary."
+            "You return ONLY a valid JSON object with keys 'catalog_cards' and 'new_apps'. "
+            "No markdown, no commentary."
         ),
         allowed_tools=[],
         max_turns=1,
@@ -170,12 +194,42 @@ async def generate_cards(memory: dict) -> list[dict]:
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
-    cards = json.loads(raw)
-    if not isinstance(cards, list):
-        raise ValueError(f"Expected a JSON array, got {type(cards).__name__}")
+    response = json.loads(raw)
+    if not isinstance(response, dict):
+        raise ValueError(f"Expected a JSON object, got {type(response).__name__}")
 
-    _validate_cards(cards)
-    return cards
+    catalog_cards = response.get("catalog_cards") or []
+    new_apps = response.get("new_apps") or []
+    if not isinstance(catalog_cards, list) or not isinstance(new_apps, list):
+        raise ValueError("catalog_cards and new_apps must both be arrays")
+
+    # Reject any non-app card sneaking into new_apps, or vice versa.
+    for c in catalog_cards:
+        if isinstance(c, dict) and c.get("kind") == "app":
+            raise ValueError(f"catalog_cards contained an app: {c.get('id')!r}")
+    for a in new_apps:
+        if not isinstance(a, dict) or a.get("kind") != "app":
+            raise ValueError(f"new_apps contained a non-app card: {a!r}")
+
+    # Drop any proposed new app whose id collides with an existing one — the
+    # existing one wins (we preserve its state). Claude was told this; this is
+    # belt-and-braces.
+    existing_app_ids = {a["id"] for a in existing_apps}
+    new_apps = [a for a in new_apps if a.get("id") not in existing_app_ids]
+
+    merged = catalog_cards + existing_apps + new_apps
+    _validate_cards(merged)
+    return merged
+
+
+def _summarize_existing_apps(apps: list[dict]) -> str:
+    if not apps:
+        return "  (none yet — feel free to propose one or two if the data calls for it)"
+    return "\n".join(
+        f"  - id={a['id']!r} title={a.get('title', '')!r} schema={a.get('schema', '?')!r} "
+        f"— {a.get('update_hints', '(no hints)')[:120]}"
+        for a in apps
+    )
 
 
 def _summarize_session(s: dict) -> str:
