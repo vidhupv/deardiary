@@ -1,0 +1,280 @@
+{
+  "config": {
+    "agent_id": "cmpac3del0062a00ex04y22a7",
+    "agent_phone_number": "+14782105637"
+  },
+  "user": {
+    "name": "Aman",
+    "background": "CS Master's at NYU, originally from Bangalore. OPT expires April 14th. Needs a job before then or visa status is at risk.",
+    "current_day": 17
+  },
+  "patterns": [
+    "When rejections cluster, says 'fine' repeatedly \u2014 it's his tell for when he's not actually fine.",
+    "Goes quieter about his family during hard weeks, steers the conversation away from them.",
+    "First real hopeful energy only appeared when a concrete opportunity came through (Meta screen).",
+    "OPT/visa pressure is a constant background hum but he rarely brings it up himself \u2014 waits to be asked.",
+    "Aman voluntarily surfaced the visa stress without being asked \u2014 breaking his usual pattern of waiting to be prompted \u2014 but then shut down every offer of support ('No. Thanks.', 'Uh, no. I'm good.'), suggesting he needed to name the weight without actually unpacking it."
+  ],
+  "sessions": [
+    {
+      "id": "day-3",
+      "date": "2026-05-03",
+      "weekday": "Sunday",
+      "time": "7:42 PM",
+      "duration": "9 min",
+      "mood": "numb",
+      "title": "Stripe said no",
+      "isToday": false,
+      "transcript": [
+        {
+          "who": "a",
+          "text": "Hey. How are you doing tonight?"
+        },
+        {
+          "who": "u",
+          "text": "Fine. Got the rejection from Stripe. It's fine, I expected it honestly. These things happen."
+        },
+        {
+          "who": "a",
+          "text": "You said 'fine' twice in one breath. What does it actually feel like?"
+        },
+        {
+          "who": "u",
+          "text": "I don't know. Numb maybe. I prepared a lot for that one. Whatever. There are other companies."
+        },
+        {
+          "who": "a",
+          "text": "Yeah. There are. You still allowed to be disappointed though."
+        },
+        {
+          "who": "u",
+          "text": "I know. I just don't want to make it a thing. I'll apply to five more tomorrow and move on."
+        }
+      ]
+    },
+    {
+      "id": "day-8",
+      "date": "2026-05-08",
+      "weekday": "Friday",
+      "time": "10:15 PM",
+      "duration": "12 min",
+      "mood": "withdrawn",
+      "title": "Anthropic too",
+      "isToday": false,
+      "transcript": [
+        {
+          "who": "a",
+          "text": "Two rejections in a week. How are you holding up?"
+        },
+        {
+          "who": "u",
+          "text": "Fine. It's fine. Anthropic was a long shot anyway, I knew that going in."
+        },
+        {
+          "who": "a",
+          "text": "I noticed you mentioned your mom called today. Did you pick up?"
+        },
+        {
+          "who": "u",
+          "text": "No. I just... I don't want to explain the situation right now. She worries. I'll call her when I have something good to say."
+        },
+        {
+          "who": "a",
+          "text": "That makes sense. How much time do you have left on the OPT clock?"
+        },
+        {
+          "who": "u",
+          "text": "About five weeks. Which is fine. There's still Meta, Cisco, a few others in the pipeline. It's manageable."
+        },
+        {
+          "who": "a",
+          "text": "You said fine three times tonight."
+        },
+        {
+          "who": "u",
+          "text": "I know. I'll stop saying it. I'm just tired."
+        }
+      ]
+    },
+    {
+      "id": "day-11",
+      "date": "2026-05-11",
+      "weekday": "Monday",
+      "time": "8:30 PM",
+      "duration": "7 min",
+      "mood": "hopeful",
+      "title": "Meta phone screen",
+      "isToday": false,
+      "transcript": [
+        {
+          "who": "a",
+          "text": "You sound different tonight. Something shift?"
+        },
+        {
+          "who": "u",
+          "text": "Meta reached out. Phone screen Thursday \u2014 that's Day 14. It's a real one, not just a recruiter call. I think I actually have a shot."
+        },
+        {
+          "who": "a",
+          "text": "You do. You've been prepping all week. What's the interview for?"
+        },
+        {
+          "who": "u",
+          "text": "Senior SWE, distributed systems team. Exactly what I've been studying. I feel like things are moving."
+        },
+        {
+          "who": "a",
+          "text": "Good. Hold onto that. And call your mom."
+        },
+        {
+          "who": "u",
+          "text": "Ha. Maybe. After Thursday."
+        }
+      ]
+    },
+    {
+      "id": "today",
+      "date": "2026-05-17",
+      "weekday": "Sunday",
+      "time": "4:06 PM",
+      "duration": "~10 min",
+      "mood": "stressed, guarded",
+      "title": "Meta day, visa on my mind",
+      "isToday": true,
+      "transcript": [
+        {
+          "who": "a",
+          "text": "Hey Aman. Today's the day \u2014 Meta interview, right? How are you feeling about it?"
+        },
+        {
+          "who": "u",
+          "text": "Doing okay. I'm on Pananalis. "
+        },
+        {
+          "who": "u",
+          "text": "Is "
+        },
+        {
+          "who": "a",
+          "text": "Cool. Pananalis \u2014 good place to focus. You said \"doing okay\" \u2014 that usually hides something. Want to run a quick two-minute prep? I can ask likely screen questions, help script one-sentence answers for your projects, or just sit with the nerves. Which do you want?"
+        },
+        {
+          "who": "u",
+          "text": "I don't know. I'm kinda stressed. Because I have visa issues as well. So yeah. So because of that, that's kinda tripping me up. Yeah. "
+        },
+        {
+          "who": "a",
+          "text": "Yeah. That's a real weight. \n\nBreathe with me for ten seconds \u2014 slow in for four, hold two, out for four. Do that once.\n\nQuick plan so the visa stuff doesn't eat the interview:\n- If you get a question about relocation/visa, keep it short and factual: \"I'm on OPT until April fourteenth, and I'm authorized to work now; if needed I can discuss timelines for sponsorship.\" (Say it calm and flat.)\n- If they ask timeline pressure, be honest but neutral: \"I have a hard deadline in mid-April, so I'm prioritizing roles that can support sponsorship discussions early in the process.\"\n- If they ask anything else, pivot to your fit: one-sentence hook + one concrete project bullet + one sentence about impact or scale.\n\nWant me to help craft that one-sentence hook and a single-line for a project you can use in the screen? If yes, name one project on Pananalis you want to highlight and the impact metric."
+        },
+        {
+          "who": "u",
+          "text": "No. Thanks. "
+        },
+        {
+          "who": "a",
+          "text": "Okay. I'm here if you change your mind. Want to run through one calm breathing round before the screen?"
+        },
+        {
+          "who": "u",
+          "text": "Uh, no. I'm good. "
+        },
+        {
+          "who": "a",
+          "text": "Alright. You got this. I'll be here after the screen if you want to debrief. Good."
+        },
+        {
+          "who": "u",
+          "text": "Yep. Bye. "
+        },
+        {
+          "who": "a",
+          "text": "Alright \u2014 go focus. I'll be here after if you want to debrief. Bye."
+        }
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "id": "mood",
+      "kind": "mood",
+      "title": "mood, last 14 days",
+      "sub": "auto \u00b7 from your calls",
+      "size": "wide",
+      "data": [
+        2,
+        2,
+        1,
+        2,
+        2,
+        1,
+        1,
+        2,
+        2,
+        3,
+        3,
+        3,
+        4,
+        3
+      ]
+    },
+    {
+      "id": "visa",
+      "kind": "countdown",
+      "title": "OPT deadline",
+      "sub": "April 14th",
+      "size": "reg",
+      "days": 18,
+      "toast": "\"Five weeks. Which is fine. There's still Meta, Cisco, a few others.\""
+    },
+    {
+      "id": "companies",
+      "kind": "themes",
+      "title": "companies in the pipeline",
+      "sub": "from your calls",
+      "size": "tall",
+      "items": [
+        {
+          "word": "Meta",
+          "count": 3
+        },
+        {
+          "word": "Stripe",
+          "count": 2
+        },
+        {
+          "word": "Anthropic",
+          "count": 2
+        },
+        {
+          "word": "Cisco",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "returning",
+      "kind": "themes",
+      "title": "what you keep returning to",
+      "sub": "last 14 days",
+      "size": "tall",
+      "items": [
+        {
+          "word": "fine (when not fine)",
+          "count": 6
+        },
+        {
+          "word": "the OPT clock",
+          "count": 4
+        },
+        {
+          "word": "calling mom",
+          "count": 3
+        },
+        {
+          "word": "distributed systems",
+          "count": 2
+        }
+      ]
+    }
+  ]
+}

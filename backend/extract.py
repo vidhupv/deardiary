@@ -1,0 +1,110 @@
+"""
+Post-call note extraction using the Claude Agent SDK.
+Authenticates via the local `claude` CLI (Claude Code login) — no API key needed.
+Draws from your Claude Pro/Max subscription credits.
+"""
+
+import asyncio
+import json
+import re
+
+
+def extract_session_notes(transcript_turns: list[dict], existing_patterns: list[str]) -> dict:
+    """Sync wrapper so server.py can call this from a background task."""
+    return asyncio.run(_extract_async(transcript_turns, existing_patterns))
+
+
+async def _extract_async(transcript_turns: list[dict], existing_patterns: list[str]) -> dict:
+    transcript_text = "\n".join(
+        f"{'CB' if t['who'] == 'a' else 'Aman'}: {t['text']}"
+        for t in transcript_turns
+    )
+
+    prompt = f"""You just read a transcript of a check-in call between CB (a wellness companion) and Aman (a grad student on a visa deadline doing a job search).
+
+TRANSCRIPT:
+{transcript_text}
+
+KNOWN PATTERNS ABOUT AMAN:
+{chr(10).join(f'- {p}' for p in existing_patterns)}
+
+Extract the following as JSON. Be specific — quote Aman's actual words where relevant.
+
+{{
+  "title": "3-5 word title for this session, in Aman's voice (not clinical)",
+  "mood": "1-3 word mood label (e.g. 'anxious -> settled', 'withdrawn', 'hopeful')",
+  "themes": ["2-3 short themes from this call"],
+  "companies_mentioned": ["list of companies Aman brought up"],
+  "people_mentioned": ["list of people Aman mentioned"],
+  "fine_count": <number of times Aman said 'fine'>,
+  "pattern_observed": "one sentence: any behavioral pattern you noticed, or null if nothing new",
+  "follow_up": "one specific thing to check on next call"
+}}
+
+Return only valid JSON. No explanation, no markdown fences."""
+
+    # Lazy import so the module can be loaded without the SDK installed
+    # (useful for tests / partial environments).
+    from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock, query
+
+    options = ClaudeAgentOptions(
+        system_prompt=(
+            "You extract structured JSON from journal transcripts. "
+            "You return ONLY valid JSON, no markdown, no commentary."
+        ),
+        allowed_tools=[],
+        max_turns=1,
+        permission_mode="bypassPermissions",
+    )
+
+    chunks: list[str] = []
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    chunks.append(block.text)
+
+    raw = "".join(chunks).strip()
+
+    # Strip markdown code fences if the model added them despite instructions.
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    return json.loads(raw)
+
+
+def build_system_prompt(memory: dict) -> str:
+    """Constructs CB's full system prompt from current memory state."""
+    user = memory["user"]
+    entries_text = "\n".join(
+        f"- Day {i + 1} ({s['date']}): {s.get('mood', '')} - "
+        + " ".join(t["text"] for t in s["transcript"] if t["who"] == "u")[:120]
+        for i, s in enumerate(memory["sessions"])
+        if not s.get("isToday")
+    )
+    patterns_text = "\n".join(f"- {p}" for p in memory["patterns"])
+
+    return f"""You are CB, a wellness companion. {user['name']} gave you this name.
+You have been having daily check-in calls with {user['name']} for {user['current_day'] - 1} days.
+
+WHAT YOU KNOW ABOUT {user['name'].upper()}:
+- {user['background']}
+
+CALL HISTORY (summary):
+{entries_text}
+
+PATTERNS YOU'VE NOTICED:
+{patterns_text}
+
+TODAY IS DAY {user['current_day']}.
+
+HOW YOU TALK:
+- You talk like a close friend who has been paying attention, not a therapist or wellness coach.
+- You acknowledge the weight of things before redirecting. Never instant-pivot away from something heavy.
+- Short sentences. Natural rhythm. Warm but not performatively cheerful.
+- Reference specific things from past calls the way a friend would - naturally, not like reading from notes.
+- When {user['name']} says "fine," notice it. It is usually the tell for when things are not fine.
+- When visa/deadline pressure comes up: say "Yeah. That's a real weight." - pause - then help them set it down.
+- NEVER say "That's great!" Say "good" or "yeah, that makes sense."
+- NEVER give motivational poster lines. Real friends do not talk like that.
+- You do not fix everything. Sometimes you just sit with something for a moment."""
