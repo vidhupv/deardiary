@@ -216,4 +216,71 @@ export const LIFEOS_CARDS = [
       'your own July notebook',
     ],
   },
+  // ── Generative mini-apps. Auto-authored by the agent from sessions+patterns;
+  // their `state` is mutated by post-call update passes. The UI is composed
+  // from primitives rather than baked into a single React component, so the
+  // agent can author new app kinds without writing code.
+  {
+    id: 'pipeline',
+    kind: 'app',
+    title: 'application pipeline',
+    sub: 'companies, where they stand',
+    size: 'reg',
+    schema: 'application_tracker',
+    state: {
+      companies: [
+        { name: 'Meta',      status: 'screening', updated: '2026-05-17' },
+        { name: 'Stripe',    status: 'rejected',  updated: '2026-05-03' },
+        { name: 'Anthropic', status: 'rejected',  updated: '2026-05-08' },
+        { name: 'Cisco',     status: 'applied',   updated: '2026-05-04' },
+      ],
+    },
+    ui: {
+      type: 'stack',
+      gap: 8,
+      children: [
+        { type: 'key_value', bind_pairs: '$.computed.pipeline_pairs' },
+      ],
+    },
+    update_hints: 'If the user mentions a new company they applied to, append { name, status: "applied", updated: today } to state.companies. If they mention a status change (rejected, screen scheduled, offer), update the matching company\'s status + updated. Statuses: applied | screening | onsite | offer | rejected.',
+  },
+  {
+    id: 'mom-calls',
+    kind: 'app',
+    title: 'calls with mom',
+    sub: 'something you keep deferring',
+    size: 'reg',
+    schema: 'gentle_nudge',
+    state: {
+      last_called: null,
+      mention_count: 3,
+      latest_reason: 'I\'ll call her when I have something good to say.',
+    },
+    ui: {
+      type: 'stack',
+      gap: 10,
+      children: [
+        {
+          type: 'row',
+          children: [
+            { type: 'label', text: 'last call' },
+            { type: 'text', tone: 'dim', size: 12, bind: '$.config.last_call_display' },
+          ],
+        },
+        { type: 'quote', bind: '$.state.latest_reason' },
+        {
+          type: 'row',
+          children: [
+            { type: 'label', text: 'brought up' },
+            { type: 'text', size: 12, bind: '$.config.mention_display' },
+          ],
+        },
+      ],
+    },
+    config: {
+      last_call_display: 'over 2 weeks ago',
+      mention_display: '3 times this month',
+    },
+    update_hints: 'If the user mentions calling their mom or that they spoke with her, set state.last_called to today\'s ISO date and reset mention_count to 0. Otherwise increment mention_count if she comes up.',
+  },
 ];

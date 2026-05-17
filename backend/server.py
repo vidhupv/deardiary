@@ -192,6 +192,37 @@ async def get_cards():
     return {"cards": memory["cards"]}
 
 
+@app.post("/regenerate-cards")
+async def regenerate_cards():
+    """Re-author the cards array from sessions + patterns via Claude. Synchronous
+    so the frontend can refetch /cards immediately after this returns."""
+    import asyncio
+    from gen_cards import generate_cards
+
+    memory = load_memory()
+    cards = await asyncio.to_thread(asyncio.run, generate_cards(memory))
+    memory["cards"] = cards
+    save_memory(memory)
+    return {"ok": True, "count": len(cards), "kinds": [c["kind"] for c in cards]}
+
+
+@app.post("/update-apps")
+async def update_apps_endpoint():
+    """Run the post-call state updater against the latest session. Useful for
+    demos when you want to show mini-apps mutating without re-triggering a call."""
+    import asyncio
+    from update_apps import update_apps_from_transcript
+
+    memory = load_memory()
+    patches = await asyncio.to_thread(asyncio.run, update_apps_from_transcript(memory))
+    if patches:
+        for c in memory["cards"]:
+            if c["id"] in patches and c.get("kind") == "app":
+                c["state"] = patches[c["id"]]
+        save_memory(memory)
+    return {"ok": True, "updated": list(patches.keys())}
+
+
 @app.post("/process-call/{call_id}")
 async def manual_process(call_id: str, background_tasks: BackgroundTasks):
     """Manually trigger note extraction for a call that already ended.
@@ -299,6 +330,25 @@ def process_call(call_id: str) -> None:
     memory["user"]["current_day"] += 1
     save_memory(memory)
     print(f"Session saved: {new_session['title']}")
+
+    # Close the voice loop: hand the fresh transcript to the Life OS state
+    # updater so any mini-apps with matching update_hints mutate in place.
+    # Failures here must not break call processing — the dashboard just won't
+    # reflect this call until the next refresh.
+    try:
+        import asyncio
+        from update_apps import update_apps_from_transcript
+
+        fresh_memory = load_memory()
+        patches = asyncio.run(update_apps_from_transcript(fresh_memory))
+        if patches:
+            for c in fresh_memory["cards"]:
+                if c["id"] in patches and c.get("kind") == "app":
+                    c["state"] = patches[c["id"]]
+            save_memory(fresh_memory)
+            print(f"Updated {len(patches)} mini-app(s): {list(patches.keys())}")
+    except Exception as e:
+        print(f"Mini-app update failed (non-fatal): {e}")
 
 
 def _estimate_duration(turns: list[dict]) -> str:

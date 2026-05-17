@@ -1,3 +1,5 @@
+import { MiniApp } from './MiniApp.jsx';
+
 function CardHead({ c, accessory }) {
   return (
     <header className="dd-card-h">
@@ -163,6 +165,9 @@ const KIND_TO_COMP = {
   sleep: SleepCard,
   letters: LettersCard,
   list: ListCard,
+  // `app` is the generative mini-app kind. Its content is a primitive UI tree
+  // interpreted at render time, with state mutated by post-call agent passes.
+  app: ({ c }) => <MiniApp app={c} />,
 };
 
 export function DashboardView({ cards }) {
