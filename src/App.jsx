@@ -3,6 +3,47 @@ import { JournalView } from './JournalView.jsx';
 import { DashboardView } from './DashboardView.jsx';
 import { SESSIONS, LIFEOS_CARDS } from './data.js';
 
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function fetchSessions() {
+  try {
+    const r = await fetch('/api/sessions');
+    if (!r.ok) return null;
+    const { sessions } = await r.json();
+    return sessions;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchCards() {
+  try {
+    const r = await fetch('/api/cards');
+    if (!r.ok) return null;
+    const { cards } = await r.json();
+    return cards;
+  } catch {
+    return null;
+  }
+}
+
+async function triggerCall() {
+  // The backend uses AMAN_PHONE_NUMBER from .env — no need to send anything.
+  const r = await fetch('/api/call', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!r.ok) throw new Error('Call failed');
+  return r.json(); // { call_id, status }
+}
+
+async function pollCallStatus(callId) {
+  const r = await fetch(`/api/call/${callId}/status`);
+  if (!r.ok) return 'unknown';
+  const { status } = await r.json();
+  return status;
+}
+
 const MODES = {
   dark: {
     bg: '#111114',
@@ -47,74 +88,104 @@ function applyMode(mode) {
   r.style.colorScheme = mode === 'dark' ? 'dark' : 'light';
 }
 
-function CallMe({ phone }) {
-  const [open, setOpen] = useState(false);
-  const [ringing, setRinging] = useState(false);
+// call states: idle | confirm | ringing | missed | done
+function CallMe({ phone, onCallEnded }) {
+  const [state, setState] = useState('idle');
   const ref = useRef(null);
+  const pollRef = useRef(null);
 
+  // Close the popup on outside click, but not while a call is in progress.
   useEffect(() => {
-    if (!open) return undefined;
     const onDown = (e) => {
       if (ref.current && !ref.current.contains(e.target)) {
-        // Suppress click-outside while the simulated call is in flight.
-        if (!ringing) setOpen(false);
+        if (state === 'idle' || state === 'confirm') setState('idle');
       }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [open, ringing]);
+  }, [state]);
 
-  const placeCall = () => {
-    setRinging(true);
-    setTimeout(() => {
-      setRinging(false);
-      setOpen(false);
-    }, 2400);
+  // Clean up any polling interval when the component unmounts.
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+  const placeCall = async () => {
+    setState('ringing');
+    try {
+      const { call_id } = await triggerCall();
+      // Poll status every 4 seconds until the call resolves.
+      pollRef.current = setInterval(async () => {
+        const status = await pollCallStatus(call_id);
+        if (status === 'no_answer' || status === 'busy' || status === 'failed') {
+          clearInterval(pollRef.current);
+          setState('missed');
+        } else if (status === 'completed') {
+          clearInterval(pollRef.current);
+          setState('done');
+          onCallEnded?.(); // refresh sessions in the journal
+        }
+      }, 4000);
+    } catch {
+      setState('confirm'); // fall back to confirm dialog on error
+    }
   };
+
+  const dismiss = () => setState('idle');
 
   return (
     <div className="dd-callme-wrap" ref={ref}>
-      <button className="dd-callme" onClick={() => setOpen((o) => !o)}>
-        <svg
-          viewBox="0 0 24 24"
-          width="13"
-          height="13"
-          aria-hidden="true"
-          className="dd-callme-icon"
-        >
+      <button
+        className="dd-callme"
+        onClick={() => state === 'idle' && setState('confirm')}
+      >
+        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" className="dd-callme-icon">
           <path
             d="M6.6 4 L9.3 4 L11 8.3 L8.8 9.6 C 9.8 12.2, 11.8 14.2, 14.4 15.2 L15.7 13 L20 14.7 L20 17.4 C 20 18.7, 18.9 19.8, 17.5 19.7 C 11 19.2, 4.8 13, 4.3 6.5 C 4.2 5.1, 5.3 4, 6.6 4 Z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinejoin="round"
-            strokeLinecap="round"
+            fill="none" stroke="currentColor" strokeWidth="1.6"
+            strokeLinejoin="round" strokeLinecap="round"
           />
         </svg>
-        <span>{ringing ? 'ringing…' : 'call me'}</span>
+        <span>{state === 'ringing' ? 'ringing…' : 'call me'}</span>
       </button>
 
-      {open && (
+      {state === 'confirm' && (
         <div className="dd-callme-pop" role="dialog">
-          {ringing ? (
-            <>
-              <div className="dd-callme-pop-status" aria-live="polite">
-                <i className="dd-pulse" />
-                <span>ringing your phone…</span>
-              </div>
-              <div className="dd-callme-pop-num dd-mono">{phone}</div>
-            </>
-          ) : (
-            <>
-              <div className="dd-callme-pop-h">we’ll ring you</div>
-              <div className="dd-callme-pop-num dd-mono">{phone}</div>
-              <div className="dd-callme-pop-actions">
-                <button className="dd-btn-primary" onClick={placeCall}>call now</button>
-                <button className="dd-btn-ghost" onClick={() => setOpen(false)}>cancel</button>
-              </div>
-              <button className="dd-link">use a different number</button>
-            </>
-          )}
+          <div className="dd-callme-pop-h">we'll ring you</div>
+          <div className="dd-callme-pop-num dd-mono">{phone}</div>
+          <div className="dd-callme-pop-actions">
+            <button className="dd-btn-primary" onClick={placeCall}>call now</button>
+            <button className="dd-btn-ghost" onClick={dismiss}>cancel</button>
+          </div>
+          <button className="dd-link">use a different number</button>
+        </div>
+      )}
+
+      {state === 'ringing' && (
+        <div className="dd-callme-pop" role="dialog">
+          <div className="dd-callme-pop-status" aria-live="polite">
+            <i className="dd-pulse" />
+            <span>ringing your phone…</span>
+          </div>
+          <div className="dd-callme-pop-num dd-mono">{phone}</div>
+        </div>
+      )}
+
+      {state === 'missed' && (
+        <div className="dd-callme-pop" role="dialog">
+          <div className="dd-callme-pop-h">missed you</div>
+          <div className="dd-callme-pop-status dd-dim">
+            <span>CB sent you a text instead.</span>
+          </div>
+          <button className="dd-btn-ghost" onClick={dismiss} style={{ marginTop: 8 }}>ok</button>
+        </div>
+      )}
+
+      {state === 'done' && (
+        <div className="dd-callme-pop" role="dialog">
+          <div className="dd-callme-pop-h">good talk.</div>
+          <div className="dd-callme-pop-status dd-dim">
+            <span>notes are being added to your journal.</span>
+          </div>
+          <button className="dd-btn-ghost" onClick={dismiss} style={{ marginTop: 8 }}>close</button>
         </div>
       )}
     </div>
@@ -161,7 +232,7 @@ function ModeToggle({ mode, onClick }) {
   );
 }
 
-function TopBar({ view, setView, phone, mode, onToggleMode }) {
+function TopBar({ view, setView, phone, onCallEnded, mode, onToggleMode }) {
   return (
     <header className="dd-top">
       <div className="dd-brand">
@@ -189,7 +260,7 @@ function TopBar({ view, setView, phone, mode, onToggleMode }) {
       </nav>
 
       <div className="dd-top-r">
-        <CallMe phone={phone} />
+        <CallMe phone={phone} onCallEnded={onCallEnded} />
         <ModeToggle mode={mode} onClick={onToggleMode} />
       </div>
     </header>
@@ -202,14 +273,47 @@ export function App() {
   const [activeId, setActiveId] = useState('today');
   const [railOpen, setRailOpen] = useState(false);
   const [sessions, setSessions] = useState(SESSIONS);
+  const [cards, setCards] = useState(LIFEOS_CARDS);
+  const [agentPhone, setAgentPhone] = useState('(606) 555 — 0117');
 
   useEffect(() => { applyMode(mode); }, [mode]);
 
-  const onAddToToday = useCallback((text) => {
+  // Load live data from the backend on mount.
+  // Falls back silently to static demo data if the backend isn't running.
+  useEffect(() => {
+    fetchSessions().then((s) => { if (s) setSessions(s); });
+    fetchCards().then((c) => { if (c) setCards(c); });
+    fetch('/api/config')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.agent_phone_number) setAgentPhone(d.agent_phone_number); })
+      .catch(() => {});
+  }, []);
+
+  // Called by CallMe when a call completes — refresh the journal.
+  const onCallEnded = useCallback(() => {
+    setTimeout(() => {
+      fetchSessions().then((s) => { if (s) setSessions(s); });
+      fetchCards().then((c) => { if (c) setCards(c); });
+    }, 5000); // wait 5s for webhook to process
+  }, []);
+
+  const onAddToToday = useCallback(async (text) => {
+    // Optimistic update so it appears instantly in the UI.
     setSessions((prev) => prev.map((s) => {
       if (s.id !== 'today') return s;
       return { ...s, transcript: [...s.transcript, { who: 'u', text }] };
     }));
+    // Persist to backend — typed entries and voice turns share the same format,
+    // so Part 2 reads both without knowing the source.
+    try {
+      await fetch('/api/entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+    } catch {
+      // Backend down — entry lives in local state only, fine for demo.
+    }
   }, []);
 
   return (
@@ -225,7 +329,8 @@ export function App() {
         <TopBar
           view={view}
           setView={setView}
-          phone="(606) 555 — 0117"
+          phone={agentPhone}
+          onCallEnded={onCallEnded}
           mode={mode}
           onToggleMode={() => setMode(mode === 'dark' ? 'light' : 'dark')}
         />
@@ -239,7 +344,7 @@ export function App() {
             onAddToToday={onAddToToday}
           />
         ) : (
-          <DashboardView cards={LIFEOS_CARDS} />
+          <DashboardView cards={cards} />
         )}
       </div>
     </>
