@@ -41,9 +41,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "memory.json")
+# Per-developer memory file. Each dev sets DEARDIARY_MEMORY=memory.<name>.json
+# in their local .env to journal as themselves without trampling the shared
+# memory.json demo state.
+MEMORY_FILENAME = os.environ.get("DEARDIARY_MEMORY", "memory.json")
+MEMORY_FILE = os.path.join(os.path.dirname(__file__), MEMORY_FILENAME)
 AP_API_KEY = os.environ.get("AGENTPHONE_API_KEY", "")
 AMAN_PHONE = os.environ.get("AMAN_PHONE_NUMBER", "")
+print(f"[deardiary] memory file: {MEMORY_FILENAME}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

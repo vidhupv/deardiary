@@ -13,6 +13,11 @@ __pycache__/
 # Secrets
 .env
 
+# Per-developer memory files (created via backend/init_dev_memory.py).
+# The shared demo state lives in backend/memory.json and IS tracked.
+backend/memory.*.json
+!backend/memory.template.json
+
 # Local tooling
 .claude/
 backend/.venv/

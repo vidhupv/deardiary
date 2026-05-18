@@ -1,0 +1,26 @@
+{
+  "config": {
+    "agent_id": "cmpac3del0062a00ex04y22a7",
+    "agent_phone_number": "+14782105637"
+  },
+  "user": {
+    "name": "Developer",
+    "background": "Edit this to a sentence or two about your real life so CB has something to anchor on. Example: 'Hackathon participant, currently building deardiary. Sleep-deprived but in good spirits.'",
+    "current_day": 1
+  },
+  "patterns": [],
+  "sessions": [
+    {
+      "id": "today",
+      "date": "2026-05-17",
+      "weekday": "Sunday",
+      "time": "today",
+      "duration": "open",
+      "mood": "open",
+      "title": "today",
+      "isToday": true,
+      "transcript": []
+    }
+  ],
+  "cards": []
+}
