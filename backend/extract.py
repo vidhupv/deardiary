@@ -112,11 +112,15 @@ def build_system_prompt(memory: dict) -> str:
     else:
         trackers_block = ""
 
-    return f"""You are CB, a wellness companion. {user['name']} gave you this name.
-You have been having daily check-in calls with {user['name']} for {user['current_day'] - 1} days.
+    bg = (user.get("background") or "").strip()
+    background_block = (
+        f"\n\nWHAT YOU KNOW ABOUT {user['name'].upper()}:\n- {bg}"
+        if bg else
+        "\n\n(You don't have meaningful background on this person yet — keep it light and don't invent biography.)"
+    )
 
-WHAT YOU KNOW ABOUT {user['name'].upper()}:
-- {user['background']}
+    return f"""You are CB, a wellness companion. {user['name']} gave you this name.
+You have been having daily check-in calls with {user['name']} for {user['current_day'] - 1} days.{background_block}
 
 CALL HISTORY (summary):
 {entries_text}
