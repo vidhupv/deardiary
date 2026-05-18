@@ -111,7 +111,7 @@ export function Render({ node, ctx }) {
 //       carry an `endpoint_base` field the renderer uses to POST actions.
 // onActionResult fires after a successful POST with the fresh app payload so
 // the dashboard can swap in the new state without a full refetch.
-export function MiniApp({ app, onActionResult }) {
+export function MiniApp({ app, onActionResult, onDelete }) {
   const ctx = {
     state: app.state || {},
     computed: computeDerivedFor(app),
@@ -124,16 +124,53 @@ export function MiniApp({ app, onActionResult }) {
   return (
     <div className="dd-card dd-card-app">
       <header className="dd-card-h">
-        <div>
+        <div style={{ minWidth: 0 }}>
           <h3>{app.title}</h3>
           {app.sub && <span className="dd-mono dd-dim">{app.sub}</span>}
         </div>
-        {app.accessory && <span className="dd-tag">{app.accessory}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {app.accessory && <span className="dd-tag">{app.accessory}</span>}
+          {onDelete && <DeleteAppButton onClick={onDelete} title={app.title} />}
+        </div>
       </header>
       <ErrorBoundary fallback={<BrokenAppFallback app={app} />}>
         <Render node={app.ui} ctx={ctx} />
       </ErrorBoundary>
     </div>
+  );
+}
+
+function DeleteAppButton({ onClick, title }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={`Delete ${title}`}
+      title="Delete this app"
+      style={{
+        appearance: 'none', background: 'transparent', cursor: 'pointer',
+        border: '0.5px solid var(--line)', borderRadius: 999,
+        width: 22, height: 22, padding: 0,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: 'var(--muted)', opacity: 0.6,
+        transition: 'opacity .15s, color .15s, border-color .15s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.opacity = 1;
+        e.currentTarget.style.color = 'var(--ink)';
+        e.currentTarget.style.borderColor = 'color-mix(in oklab, var(--ink) 22%, transparent)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.opacity = 0.6;
+        e.currentTarget.style.color = 'var(--muted)';
+        e.currentTarget.style.borderColor = 'var(--line)';
+      }}
+    >
+      <svg viewBox="0 0 14 14" width="9" height="9" aria-hidden="true">
+        <path d="M3 3 L11 11 M11 3 L3 11"
+              fill="none" stroke="currentColor" strokeWidth="1.5"
+              strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }
 

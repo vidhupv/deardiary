@@ -44,6 +44,15 @@ async function fetchApps() {
   }
 }
 
+async function deleteApp(appId) {
+  try {
+    const r = await fetch(`/api/apps/${appId}`, { method: 'DELETE' });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function triggerCall() {
   // The backend uses AMAN_PHONE_NUMBER from .env — no need to send anything.
   const r = await fetch('/api/call', {
@@ -250,6 +259,125 @@ function ModeToggle({ mode, onClick }) {
   );
 }
 
+// Settings popover. One setting for now: daily call schedule. Loads/saves
+// via GET/PUT /api/schedule. The backend's _schedule_loop ticks every 30s
+// and fires the call when local time matches.
+function Settings() {
+  const [open, setOpen] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [time, setTime] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  const ref = useRef(null);
+
+  // Load schedule when popover opens.
+  useEffect(() => {
+    if (!open) return undefined;
+    fetch('/api/schedule')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        if (!s) return;
+        setEnabled(!!s.enabled);
+        setTime(s.daily_call_time || '');
+      })
+      .catch(() => {});
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const save = async () => {
+    if (enabled && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
+      window.alert('Please pick a time before enabling daily calls.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch('/api/schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, daily_call_time: time }),
+      });
+      if (r.ok) setSavedAt(Date.now());
+    } catch {
+      /* no-op */
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saved = savedAt > 0 && Date.now() - savedAt < 2500;
+
+  return (
+    <div className="dd-settings-wrap" ref={ref}>
+      <button
+        className="dd-settings"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Settings"
+        title="Settings"
+      >
+        {/* Simple gear */}
+        <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
+          <circle cx="10" cy="10" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          {[0, 60, 120, 180, 240, 300].map((deg) => {
+            const a = (deg * Math.PI) / 180;
+            return (
+              <line
+                key={deg}
+                x1={10 + Math.cos(a) * 4.4} y1={10 + Math.sin(a) * 4.4}
+                x2={10 + Math.cos(a) * 6.6} y2={10 + Math.sin(a) * 6.6}
+                stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+              />
+            );
+          })}
+        </svg>
+      </button>
+
+      {open && (
+        <div className="dd-settings-pop" role="dialog">
+          <div className="dd-settings-h">daily check-in</div>
+
+          <div className="dd-settings-row">
+            <span className="dd-settings-label">call me every day</span>
+            <button
+              className="dd-toggle"
+              data-on={enabled ? '1' : '0'}
+              onClick={() => setEnabled((e) => !e)}
+              aria-pressed={enabled}
+              aria-label="Toggle daily call"
+            />
+          </div>
+
+          <div className="dd-settings-row">
+            <span className="dd-settings-label">at</span>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              disabled={!enabled}
+              className="dd-time-input"
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button className="dd-btn-primary" onClick={save} disabled={saving}>
+              {saving ? 'saving…' : saved ? 'saved' : 'save'}
+            </button>
+            <button className="dd-btn-ghost" onClick={() => setOpen(false)}>close</button>
+          </div>
+
+          <div className="dd-settings-note">
+            Uses your machine's local time. Backend has to be running for the
+            call to fire — keep the server up.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TopBar({ view, setView, phone, onCallEnded, mode, onToggleMode }) {
   return (
     <header className="dd-top">
@@ -279,6 +407,7 @@ function TopBar({ view, setView, phone, onCallEnded, mode, onToggleMode }) {
 
       <div className="dd-top-r">
         <CallMe phone={phone} onCallEnded={onCallEnded} />
+        <Settings />
         <ModeToggle mode={mode} onClick={onToggleMode} />
       </div>
     </header>
@@ -336,6 +465,22 @@ export function App() {
     setApps((prev) => prev.map((a) => (a.id === freshApp.id
       ? { ...freshApp, kind: 'app', endpoint_base: `/api/apps/${freshApp.id}` }
       : a)));
+  }, []);
+
+  // Confirm + delete a mini-app. Optimistically removes from state, then
+  // posts. If the delete fails (network), we refetch to restore truth.
+  const onDeleteApp = useCallback(async (appId, appTitle) => {
+    const ok = window.confirm(
+      `Delete "${appTitle}"? This removes it from your dashboard. ` +
+      `If you mention something it tracked again on a call, CB can rebuild a similar one.`
+    );
+    if (!ok) return;
+    setApps((prev) => prev.filter((a) => a.id !== appId));
+    const success = await deleteApp(appId);
+    if (!success) {
+      const fresh = await fetchApps();
+      if (fresh) setApps(fresh);
+    }
   }, []);
 
   // Trigger the backend's gen_cards pass and refetch on success. Catalog cards
@@ -408,6 +553,7 @@ export function App() {
             cards={cards}
             apps={apps}
             onAppUpdated={onAppUpdated}
+            onDeleteApp={onDeleteApp}
             onRefresh={onRefreshCards}
             refreshing={refreshing}
           />

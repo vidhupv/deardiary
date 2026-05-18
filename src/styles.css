@@ -137,6 +137,81 @@ h1, h2, h3 {
                  border-color: color-mix(in oklab, var(--ink) 20%, transparent); }
 .dd-mode:active { transform: rotate(20deg); }
 
+/* ────── Settings (gear) — same shape as mode toggle ──────────── */
+.dd-settings-wrap { position: relative; }
+.dd-settings {
+  appearance: none; border: 0.5px solid var(--line);
+  background: transparent;
+  width: 32px; height: 32px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.dd-settings:hover { color: var(--ink); background: var(--surface);
+                     border-color: color-mix(in oklab, var(--ink) 20%, transparent); }
+
+.dd-settings-pop {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 280px;
+  background: var(--surface);
+  border: 0.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 20px 40px -16px rgba(0,0,0,.45),
+              0 4px 12px -4px rgba(0,0,0,.18);
+  z-index: 20;
+  animation: dd-pop .18s ease-out;
+}
+.dd-settings-h {
+  font-family: var(--display);
+  font-size: 15px; font-weight: 500; letter-spacing: -0.015em;
+  margin-bottom: 14px;
+}
+.dd-settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px; color: var(--ink);
+}
+.dd-settings-row + .dd-settings-row {
+  border-top: 0.5px solid var(--line);
+}
+.dd-settings-label { color: var(--muted); }
+.dd-time-input {
+  appearance: none; outline: none; border: 0;
+  background: transparent;
+  font-family: var(--mono); font-size: 13px;
+  color: var(--ink);
+  padding: 4px 6px;
+  border-bottom: 0.5px dashed var(--line);
+  width: 80px; text-align: right;
+}
+.dd-time-input:focus { border-bottom-color: var(--accent); }
+.dd-time-input:disabled { opacity: 0.4; }
+
+.dd-toggle {
+  appearance: none; border: 0; cursor: pointer;
+  width: 32px; height: 18px; border-radius: 999px;
+  background: color-mix(in oklab, var(--ink) 14%, transparent);
+  position: relative;
+  transition: background .2s;
+}
+.dd-toggle::after {
+  content: ""; position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 999px;
+  background: var(--ink);
+  transition: left .2s, background .2s;
+}
+.dd-toggle[data-on="1"] { background: var(--accent); }
+.dd-toggle[data-on="1"]::after { left: 16px; background: var(--accent-ink); }
+
+.dd-settings-note {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 0.5px solid var(--line);
+  font-size: 11.5px; line-height: 1.5;
+  color: var(--dim);
+}
+
 /* ────── Call me (quiet) ────────────────────────────────────── */
 .dd-callme-wrap { position: relative; }
 .dd-callme {

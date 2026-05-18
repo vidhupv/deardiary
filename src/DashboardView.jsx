@@ -208,7 +208,7 @@ function EmptyState() {
   );
 }
 
-export function DashboardView({ cards, apps = [], onAppUpdated, onRefresh, refreshing }) {
+export function DashboardView({ cards, apps = [], onAppUpdated, onDeleteApp, onRefresh, refreshing }) {
   // Mini-apps from /api/apps come with endpoint_base; cards-as-apps (legacy
   // inline mini-apps in memory.json) do not, so they render read-only. Combine
   // both into one ordered list. Apps from disk come first (they're the active
@@ -240,7 +240,11 @@ export function DashboardView({ cards, apps = [], onAppUpdated, onRefresh, refre
           if (w.endpoint_base) {
             return (
               <div key={w.id} className={`dd-cell dd-cell-${w.size || 'reg'}`}>
-                <MiniApp app={w} onActionResult={onAppUpdated} />
+                <MiniApp
+                  app={w}
+                  onActionResult={onAppUpdated}
+                  onDelete={onDeleteApp ? () => onDeleteApp(w.id, w.title) : undefined}
+                />
               </div>
             );
           }

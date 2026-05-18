@@ -12,6 +12,7 @@ Run with:
   uvicorn server:app --reload --port 8000
 """
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -98,51 +99,52 @@ def send_sms(to_number: str, text: str) -> None:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.post("/call")
-async def trigger_call(request: Request):
-    """
-    Trigger CB to call the user.
-    Reads memory, builds a fresh system prompt with today's context,
-    fires the outbound call, returns the call_id for status polling.
-    """
-    # Always call AMAN_PHONE_NUMBER from .env — the frontend doesn't pass this
-    # so users can't accidentally trigger calls to arbitrary numbers.
+def place_call() -> tuple[str, str]:
+    """Build the system prompt, fire the outbound call, return (call_id, status).
+    Raises ValueError / RuntimeError on config issues so both the HTTP route
+    and the scheduler can surface errors cleanly."""
     to_number = AMAN_PHONE
     if not to_number:
-        raise HTTPException(status_code=400, detail="AMAN_PHONE_NUMBER not set in .env")
+        raise ValueError("AMAN_PHONE_NUMBER not set in .env")
 
     memory = load_memory()
     aid = agent_id()
     if not aid:
-        raise HTTPException(
-            status_code=500,
-            detail="AGENT_ID not set. Add it to .env, or have your friend run setup.py.",
+        raise ValueError(
+            "AGENT_ID not set. Add it to .env, or have your friend run setup.py."
         )
 
     system_prompt = build_system_prompt(memory)
     user_name = memory["user"]["name"]
-
-    # Generic warm opening — the system prompt already tells CB to scan
-    # LIVE TRACKERS and patterns for the most relevant thread to mention.
-    # Avoid hardcoding situation-specific lines here; that leaks one user's
-    # context into every other user's call.
+    # Generic warm opening — system prompt's LIVE TRACKERS section tells CB
+    # how to pick a relevant opener. Hardcoding situation-specific lines here
+    # would leak one user's context into every other user's call.
     begin_message = f"Hey {user_name}. How are you?"
 
-    # Sanity check: confirm we're sending the full memory-injected prompt,
-    # not falling back to AgentPhone's dashboard default.
     print(f"[deardiary] system_prompt: {len(system_prompt)} chars, "
           f"{system_prompt.count(chr(10))} lines")
     print(f"[deardiary] first 300: {system_prompt[:300]!r}")
 
-    client = ap_client()
-    call = client.calls.make(
+    call = ap_client().calls.make(
         agent_id=aid,
         to_number=to_number,
         system_prompt=system_prompt,
         initial_greeting=begin_message,
     )
+    return call.id, "calling"
 
-    return {"call_id": call.id, "status": "calling"}
+
+@app.post("/call")
+async def trigger_call(request: Request):
+    """
+    Trigger CB to call the user. Reads memory, builds a fresh system prompt,
+    fires the outbound call, returns the call_id for status polling.
+    """
+    try:
+        call_id, status = place_call()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"call_id": call_id, "status": status}
 
 
 @app.post("/entry")
@@ -220,6 +222,91 @@ async def get_cards():
     return {"cards": memory["cards"]}
 
 
+# ── Daily call schedule ─────────────────────────────────────────────────────
+# Stored on memory.json["schedule"]:
+#   { enabled: bool, daily_call_time: "HH:MM", last_triggered_date: "YYYY-MM-DD" }
+# An asyncio background task ticks every 30s and fires place_call() when the
+# current local time matches daily_call_time, once per day. We track
+# last_triggered_date so a server restart doesn't re-fire the same day's call.
+
+import re as _re
+
+_TIME_RE = _re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+@app.get("/schedule")
+async def get_schedule():
+    memory = load_memory()
+    sched = memory.get("schedule") or {}
+    return {
+        "enabled": bool(sched.get("enabled")),
+        "daily_call_time": sched.get("daily_call_time") or "",
+        "last_triggered_date": sched.get("last_triggered_date") or "",
+    }
+
+
+@app.put("/schedule")
+async def set_schedule(request: Request):
+    body = await request.json()
+    enabled = bool(body.get("enabled"))
+    daily_call_time = (body.get("daily_call_time") or "").strip()
+
+    if enabled and not _TIME_RE.match(daily_call_time):
+        raise HTTPException(
+            status_code=400,
+            detail="daily_call_time must be HH:MM in 24h format (e.g. 08:30)",
+        )
+
+    memory = load_memory()
+    prev = memory.get("schedule") or {}
+    memory["schedule"] = {
+        "enabled": enabled,
+        "daily_call_time": daily_call_time if enabled else prev.get("daily_call_time", ""),
+        # Preserve last_triggered_date so toggling enabled off+on doesn't
+        # re-fire today's call.
+        "last_triggered_date": prev.get("last_triggered_date", ""),
+    }
+    save_memory(memory)
+    return memory["schedule"]
+
+
+async def _schedule_loop():
+    """Background tick. Wakes every 30s, fires the daily call if it's time."""
+    print("[schedule] loop started")
+    while True:
+        try:
+            memory = load_memory()
+            sched = memory.get("schedule") or {}
+            if sched.get("enabled") and sched.get("daily_call_time"):
+                now = datetime.now()
+                current_hm = now.strftime("%H:%M")
+                today_iso = now.strftime("%Y-%m-%d")
+                if (
+                    current_hm == sched["daily_call_time"]
+                    and sched.get("last_triggered_date") != today_iso
+                ):
+                    print(f"[schedule] firing daily call (time={current_hm}, "
+                          f"target={sched['daily_call_time']})")
+                    try:
+                        call_id, _ = place_call()
+                        print(f"[schedule] call placed: {call_id}")
+                    except Exception as e:
+                        print(f"[schedule] place_call failed: {e}")
+                    # Mark fired even on failure so we don't retry-loop every
+                    # 30s for the rest of the day; user can re-enable manually.
+                    fresh = load_memory()
+                    fresh.setdefault("schedule", {})["last_triggered_date"] = today_iso
+                    save_memory(fresh)
+        except Exception as e:
+            print(f"[schedule] tick error: {e}")
+        await asyncio.sleep(30)
+
+
+@app.on_event("startup")
+async def _start_schedule_loop():
+    asyncio.create_task(_schedule_loop())
+
+
 # ── Mini-apps as real apps with backends ────────────────────────────────────
 # Each app is a directory under backend/apps/<id>/ containing:
 #   manifest.json   — id, title, sub, ui tree, etc. (rendering contract)
@@ -282,6 +369,24 @@ async def get_app(app_id: str):
     """Single app — used by the frontend after an action to refresh state."""
     manifest, state, _ = _load_app(app_id)
     return {**manifest, "id": app_id, "state": state}
+
+
+@app.delete("/apps/{app_id}")
+async def delete_app(app_id: str):
+    """Remove a mini-app's directory from backend/apps/. The next gen_cards
+    pass treats this app as no-longer-existing — Claude is free to propose a
+    similar one again, but only if the user explicitly asks for it."""
+    # Defense-in-depth path validation: app_id is from the URL, so we make sure
+    # the resolved path stays inside APPS_DIR. Anything funky → 404.
+    app_dir = (APPS_DIR / app_id).resolve()
+    if not str(app_dir).startswith(str(APPS_DIR.resolve()) + os.sep):
+        raise HTTPException(status_code=404, detail=f"App {app_id!r} not found")
+    if not app_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"App {app_id!r} not found")
+
+    import shutil
+    shutil.rmtree(app_dir)
+    return {"ok": True, "deleted": app_id}
 
 
 @app.post("/apps/{app_id}/{action}")
