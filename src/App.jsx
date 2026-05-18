@@ -26,6 +26,24 @@ async function fetchCards() {
   }
 }
 
+// Real mini-apps live on disk under backend/apps/<id>/. Each is returned with
+// its manifest + current state. We attach endpoint_base here so interactive
+// primitives know where to POST their actions.
+async function fetchApps() {
+  try {
+    const r = await fetch('/api/apps');
+    if (!r.ok) return null;
+    const { apps } = await r.json();
+    return (apps || []).map((a) => ({
+      ...a,
+      kind: 'app',
+      endpoint_base: `/api/apps/${a.id}`,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 async function triggerCall() {
   // The backend uses AMAN_PHONE_NUMBER from .env — no need to send anything.
   const r = await fetch('/api/call', {
@@ -274,6 +292,9 @@ export function App() {
   const [railOpen, setRailOpen] = useState(false);
   const [sessions, setSessions] = useState(SESSIONS);
   const [cards, setCards] = useState(LIFEOS_CARDS);
+  // Mini-apps live on disk under backend/apps/<id>/. We load them alongside
+  // the catalog cards array and render both in the dashboard.
+  const [apps, setApps] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [agentPhone, setAgentPhone] = useState('(606) 555 — 0117');
 
@@ -284,6 +305,7 @@ export function App() {
   useEffect(() => {
     fetchSessions().then((s) => { if (s) setSessions(s); });
     fetchCards().then((c) => { if (c) setCards(c); });
+    fetchApps().then((a) => { if (a) setApps(a); });
     fetch('/api/config')
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d?.agent_phone_number) setAgentPhone(d.agent_phone_number); })
@@ -295,7 +317,17 @@ export function App() {
     setTimeout(() => {
       fetchSessions().then((s) => { if (s) setSessions(s); });
       fetchCards().then((c) => { if (c) setCards(c); });
+      fetchApps().then((a) => { if (a) setApps(a); });
     }, 5000); // wait 5s for webhook to process
+  }, []);
+
+  // Splice a single app's fresh payload into the apps array after a
+  // successful action — avoids a full /api/apps refetch on every click.
+  const onAppUpdated = useCallback((freshApp) => {
+    if (!freshApp?.id) return;
+    setApps((prev) => prev.map((a) => (a.id === freshApp.id
+      ? { ...freshApp, kind: 'app', endpoint_base: `/api/apps/${freshApp.id}` }
+      : a)));
   }, []);
 
   // Trigger the backend's gen_cards pass and refetch on success. Catalog cards
@@ -306,8 +338,9 @@ export function App() {
     try {
       const r = await fetch('/api/regenerate-cards', { method: 'POST' });
       if (r.ok) {
-        const fresh = await fetchCards();
-        if (fresh) setCards(fresh);
+        const [freshCards, freshApps] = await Promise.all([fetchCards(), fetchApps()]);
+        if (freshCards) setCards(freshCards);
+        if (freshApps) setApps(freshApps);
       }
     } catch {
       // Backend unreachable — leave existing cards in place.
@@ -363,7 +396,13 @@ export function App() {
             onAddToToday={onAddToToday}
           />
         ) : (
-          <DashboardView cards={cards} onRefresh={onRefreshCards} refreshing={refreshing} />
+          <DashboardView
+            cards={cards}
+            apps={apps}
+            onAppUpdated={onAppUpdated}
+            onRefresh={onRefreshCards}
+            refreshing={refreshing}
+          />
         )}
       </div>
     </>

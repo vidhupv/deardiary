@@ -1,8 +1,11 @@
 // Primitives for mini-apps. Each takes (node, ctx) where node is the JSON
-// config from the mini-app's ui tree and ctx is { state, computed }.
+// config from the mini-app's ui tree and ctx is { state, computed, ... }.
 // A primitive's contract: read fields off node, optionally resolve $.path
-// bindings against ctx, render. No side effects, no fetches.
+// bindings against ctx, render. Interactive primitives may POST to
+// ctx.endpointBase/<action> and call ctx.onActionResult(fresh_app) with the
+// response so the dashboard can swap in the new state.
 
+import { useState } from 'react';
 import { Render } from './MiniApp.jsx';
 
 // ── Binding resolution ──────────────────────────────────────────────────────
@@ -321,6 +324,195 @@ function Dot({ node }) {
   );
 }
 
+// ── Interactive primitives ──────────────────────────────────────────────────
+// These actually call the backend. Each app's endpoint base is
+// ctx.endpointBase ("/api/apps/<id>"). On success we call ctx.onActionResult
+// with the fresh app payload returned by the server (which includes the
+// updated state), so the dashboard re-renders without a full refetch.
+
+async function dispatchAction(ctx, action, body) {
+  if (!ctx.endpointBase) {
+    console.warn('[mini-app] no endpointBase; action ignored', action);
+    return null;
+  }
+  try {
+    const r = await fetch(`${ctx.endpointBase}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    if (!r.ok) {
+      console.warn('[mini-app] action failed', action, r.status);
+      return null;
+    }
+    const fresh = await r.json();
+    ctx.onActionResult?.(fresh);
+    return fresh;
+  } catch (e) {
+    console.warn('[mini-app] action error', action, e);
+    return null;
+  }
+}
+
+function TextInput({ node, ctx }) {
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const field = node.field || 'text';
+  const action = node.action;
+
+  const submit = async () => {
+    const v = value.trim();
+    if (!v || !action || busy) return;
+    setBusy(true);
+    await dispatchAction(ctx, action, { [field]: v });
+    setValue('');
+    setBusy(false);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+  };
+  const disabled = !ctx.endpointBase || !action;
+
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={onKey}
+        placeholder={node.placeholder || 'add an item…'}
+        disabled={disabled || busy}
+        style={{
+          flex: 1, minWidth: 0,
+          appearance: 'none', outline: 'none',
+          background: 'transparent', color: 'var(--ink)',
+          fontFamily: 'var(--sans)', fontSize: 13, lineHeight: 1.4,
+          padding: '6px 0',
+          border: 0, borderBottom: '0.5px dashed var(--line)',
+          transition: 'border-color .15s',
+        }}
+        onFocus={(e) => e.target.style.borderBottomColor = 'var(--accent)'}
+        onBlur={(e) => e.target.style.borderBottomColor = 'var(--line)'}
+      />
+      <button
+        onClick={submit}
+        disabled={disabled || busy || !value.trim()}
+        style={{
+          appearance: 'none', cursor: busy ? 'default' : 'pointer',
+          background: 'var(--ink)', color: 'var(--bg)',
+          font: '500 11px/1 var(--sans)',
+          padding: '6px 12px', borderRadius: 999, border: 0,
+          letterSpacing: '0.01em',
+          opacity: (disabled || !value.trim() || busy) ? 0.35 : 1,
+        }}
+      >
+        {busy ? '…' : (node.submit_label || 'add')}
+      </button>
+    </div>
+  );
+}
+
+function CheckboxList({ node, ctx }) {
+  const items = read(node, 'items', ctx) ?? [];
+  const labelField = node.item_label_field || 'text';
+  const idField = node.item_id_field || 'id';
+  const action = node.on_check_action;
+  const empty = node.empty_text || 'nothing yet';
+  const [pending, setPending] = useState(null); // id of item being checked
+
+  const onCheck = async (item) => {
+    if (!action) return;
+    const id = item?.[idField];
+    if (!id) return;
+    setPending(id);
+    await dispatchAction(ctx, action, { [idField]: id });
+    setPending(null);
+  };
+
+  if (!items.length) {
+    return (
+      <p style={{
+        margin: 0, color: 'var(--dim)', fontSize: 12.5, fontStyle: 'italic',
+      }}>{empty}</p>
+    );
+  }
+  return (
+    <ul style={{
+      listStyle: 'none', padding: 0, margin: 0,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {items.map((item, i) => {
+        const id = item?.[idField] ?? i;
+        const label = item?.[labelField] ?? String(item);
+        const isPending = pending === id;
+        return (
+          <li key={id} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '7px 0',
+            borderTop: i === 0 ? 0 : '0.5px solid var(--line)',
+            opacity: isPending ? 0.5 : 1,
+            transition: 'opacity .15s',
+          }}>
+            <button
+              onClick={() => onCheck(item)}
+              disabled={isPending || !action}
+              aria-label={`mark "${label}" done`}
+              style={{
+                width: 16, height: 16, flexShrink: 0,
+                borderRadius: 4, border: '0.5px solid var(--line)',
+                background: 'transparent', cursor: action ? 'pointer' : 'default',
+                padding: 0, color: 'var(--accent)',
+                fontSize: 11, lineHeight: 1,
+              }}
+            >
+              {isPending ? '·' : ''}
+            </button>
+            <span style={{
+              fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.4,
+              wordBreak: 'break-word', minWidth: 0,
+            }}>{label}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function ActionButton({ node, ctx }) {
+  const [busy, setBusy] = useState(false);
+  const action = node.action;
+  const label = node.label || node.text || 'do it';
+
+  const click = async () => {
+    if (!action || busy) return;
+    setBusy(true);
+    await dispatchAction(ctx, action, node.body || {});
+    setBusy(false);
+  };
+  const disabled = !ctx.endpointBase || !action;
+
+  return (
+    <button
+      onClick={click}
+      disabled={disabled || busy}
+      style={{
+        appearance: 'none',
+        cursor: (disabled || busy) ? 'default' : 'pointer',
+        background: node.tone === 'ghost' ? 'transparent' : 'var(--ink)',
+        color: node.tone === 'ghost' ? 'var(--muted)' : 'var(--bg)',
+        border: node.tone === 'ghost' ? '0.5px solid var(--line)' : 0,
+        font: '500 11px/1 var(--sans)',
+        padding: '6px 12px', borderRadius: 999,
+        letterSpacing: '0.01em',
+        opacity: (disabled || busy) ? 0.35 : 1,
+        alignSelf: 'flex-start',
+      }}
+    >
+      {busy ? '…' : label}
+    </button>
+  );
+}
+
 // ── Registry ────────────────────────────────────────────────────────────────
 export const PRIMITIVES = {
   stack: Stack,
@@ -339,4 +531,8 @@ export const PRIMITIVES = {
   key_value: KeyValue,
   pill: Pill,
   dot: Dot,
+  // Interactive — POST to ctx.endpointBase/<action>
+  text_input: TextInput,
+  checkbox_list: CheckboxList,
+  button: ActionButton,
 };

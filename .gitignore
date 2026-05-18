@@ -18,6 +18,12 @@ __pycache__/
 backend/memory.*.json
 !backend/memory.template.json
 
+# Per-developer mini-apps. Claude generates these from each user's data into
+# backend/apps/<id>/. They're personal (an app generated for Vidhu makes no
+# sense on someone else's machine), so we don't track them.
+backend/apps/*
+!backend/apps/.gitkeep
+
 # Local tooling
 .claude/
 backend/.venv/

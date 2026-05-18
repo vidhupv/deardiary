@@ -36,6 +36,14 @@ function computeDerivedFor(app) {
       mono: true,
     }));
   }
+  // Generic list summary — useful for any state.queue/items array.
+  if (Array.isArray(s.queue)) {
+    c.queue_count = s.queue.length;
+    c.queue_count_text = s.queue.length === 1 ? '1 item' : `${s.queue.length} items`;
+  }
+  if (Array.isArray(s.completed)) {
+    c.completed_count = s.completed.length;
+  }
   return c;
 }
 
@@ -96,11 +104,22 @@ export function Render({ node, ctx }) {
 }
 
 // ── Card-shell wrapper, used by DashboardView ───────────────────────────────
-export function MiniApp({ app }) {
+// `app` may come from two sources:
+//   (a) memory.json cards[] entry with kind:"app" — legacy inline mini-app,
+//       state preserved in memory.json, no backend dispatch (read-only).
+//   (b) backend/apps/<id>/ on disk — manifest + state + actions.py. These
+//       carry an `endpoint_base` field the renderer uses to POST actions.
+// onActionResult fires after a successful POST with the fresh app payload so
+// the dashboard can swap in the new state without a full refetch.
+export function MiniApp({ app, onActionResult }) {
   const ctx = {
     state: app.state || {},
     computed: computeDerivedFor(app),
     config: app.config || {},
+    // Endpoint base is set by DashboardView when serving from /api/apps.
+    // If missing, action primitives render disabled (no backend to hit).
+    endpointBase: app.endpoint_base || null,
+    onActionResult,
   };
   return (
     <div className="dd-card dd-card-app">

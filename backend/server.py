@@ -12,6 +12,7 @@ Run with:
   uvicorn server:app --reload --port 8000
 """
 
+import importlib.util
 import json
 import os
 import time
@@ -219,18 +220,124 @@ async def get_cards():
     return {"cards": memory["cards"]}
 
 
+# ── Mini-apps as real apps with backends ────────────────────────────────────
+# Each app is a directory under backend/apps/<id>/ containing:
+#   manifest.json   — id, title, sub, ui tree, etc. (rendering contract)
+#   state.json      — current data the app mutates
+#   actions.py      — Python functions (state, body) -> new_state, one per action
+#
+# Apps are discovered from the filesystem and dispatched generically — no
+# server restart needed when a new app appears. Actions are evaluated fresh
+# on each call so a regenerated actions.py takes effect immediately.
+
+APPS_DIR = Path(__file__).parent / "apps"
+
+
+def _load_app(app_id: str) -> tuple[dict, dict, Path]:
+    """Load (manifest, state, app_dir) for the given app id, or raise 404."""
+    app_dir = APPS_DIR / app_id
+    if not app_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"App {app_id!r} not found")
+    manifest_path = app_dir / "manifest.json"
+    state_path = app_dir / "state.json"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=500, detail=f"App {app_id!r} missing manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    return manifest, state, app_dir
+
+
+def _load_actions_module(app_dir: Path):
+    """Import an app's actions.py fresh (so edits take effect without restart)."""
+    actions_path = app_dir / "actions.py"
+    if not actions_path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location(
+        f"apps.{app_dir.name}.actions", actions_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@app.get("/apps")
+async def list_apps():
+    """Enumerate all mini-apps on disk with their manifest + current state."""
+    apps = []
+    if not APPS_DIR.exists():
+        return {"apps": apps}
+    for app_dir in sorted(APPS_DIR.iterdir()):
+        if not app_dir.is_dir() or app_dir.name.startswith((".", "_")):
+            continue
+        try:
+            manifest, state, _ = _load_app(app_dir.name)
+            apps.append({**manifest, "id": app_dir.name, "state": state})
+        except Exception as e:
+            print(f"[apps] skipping {app_dir.name}: {e}")
+    return {"apps": apps}
+
+
+@app.get("/apps/{app_id}")
+async def get_app(app_id: str):
+    """Single app — used by the frontend after an action to refresh state."""
+    manifest, state, _ = _load_app(app_id)
+    return {**manifest, "id": app_id, "state": state}
+
+
+@app.post("/apps/{app_id}/{action}")
+async def app_action(app_id: str, action: str, request: Request):
+    """
+    Dispatch an action to a mini-app. Each app's actions.py exposes functions
+    named after the action (with - converted to _), called as
+        new_state = action(state, body)
+    """
+    manifest, state, app_dir = _load_app(app_id)
+    module = _load_actions_module(app_dir)
+    if module is None:
+        raise HTTPException(status_code=501, detail=f"App {app_id!r} has no actions.py")
+
+    handler_name = action.replace("-", "_")
+    handler = getattr(module, handler_name, None)
+    if not callable(handler):
+        raise HTTPException(
+            status_code=404,
+            detail=f"App {app_id!r} has no action {handler_name!r}",
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    try:
+        new_state = handler(state, body) or state
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Action failed: {e}")
+
+    (app_dir / "state.json").write_text(json.dumps(new_state, indent=2))
+    return {**manifest, "id": app_id, "state": new_state}
+
+
 @app.post("/regenerate-cards")
 async def regenerate_cards():
-    """Re-author the cards array from sessions + patterns via Claude. Synchronous
-    so the frontend can refetch /cards immediately after this returns."""
+    """Re-author the dashboard from sessions + patterns via Claude. Writes
+    catalog cards into memory.json["cards"] and creates new mini-apps on disk
+    under backend/apps/<id>/. Existing apps on disk are preserved (state intact).
+    Synchronous so the frontend can refetch /cards + /apps immediately."""
     import asyncio
-    from gen_cards import generate_cards
+    from gen_cards import generate
 
     memory = load_memory()
-    cards = await asyncio.to_thread(asyncio.run, generate_cards(memory))
-    memory["cards"] = cards
+    result = await asyncio.to_thread(asyncio.run, generate(memory))
+    memory["cards"] = result["cards"]
     save_memory(memory)
-    return {"ok": True, "count": len(cards), "kinds": [c["kind"] for c in cards]}
+    return {
+        "ok": True,
+        "catalog_count": len(result["cards"]),
+        "kinds": [c["kind"] for c in result["cards"]],
+        "created_apps": result["created_apps"],
+        "skipped_apps": result["skipped_apps"],
+    }
 
 
 @app.post("/update-apps")

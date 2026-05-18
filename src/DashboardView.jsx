@@ -189,7 +189,35 @@ function RefreshButton({ onClick, refreshing }) {
   );
 }
 
-export function DashboardView({ cards, onRefresh, refreshing }) {
+function EmptyState() {
+  return (
+    <div style={{
+      gridColumn: '1 / -1',
+      padding: '48px 24px',
+      textAlign: 'center',
+      color: 'var(--muted)',
+      fontSize: 14, lineHeight: 1.6,
+    }}>
+      <p style={{ margin: 0, fontFamily: 'var(--display)', fontSize: 17, color: 'var(--ink)' }}>
+        Nothing assembled yet.
+      </p>
+      <p style={{ margin: '8px 0 0', color: 'var(--dim)' }}>
+        CB will quietly build small tools here as you keep journaling.
+      </p>
+    </div>
+  );
+}
+
+export function DashboardView({ cards, apps = [], onAppUpdated, onRefresh, refreshing }) {
+  // Mini-apps from /api/apps come with endpoint_base; cards-as-apps (legacy
+  // inline mini-apps in memory.json) do not, so they render read-only. Combine
+  // both into one ordered list. Apps from disk come first (they're the active
+  // tools), then catalog cards (passive summaries).
+  const inlineApps = cards.filter((c) => c.kind === 'app');
+  const catalogCards = cards.filter((c) => c.kind !== 'app');
+  const widgets = [...apps, ...inlineApps, ...catalogCards];
+  const total = widgets.length;
+
   return (
     <div className="dd-dash">
       <header className="dd-dash-h">
@@ -200,16 +228,28 @@ export function DashboardView({ cards, onRefresh, refreshing }) {
           </p>
         </div>
         <div className="dd-dash-meta dd-mono dd-dim">
-          <span>{cards.length} cards</span>
+          <span>{total === 1 ? '1 card' : `${total} cards`}</span>
           {onRefresh && <RefreshButton onClick={onRefresh} refreshing={refreshing} />}
         </div>
       </header>
       <div className="dd-grid">
-        {cards.map((c) => {
-          const Comp = KIND_TO_COMP[c.kind];
+        {total === 0 && <EmptyState />}
+        {widgets.map((w) => {
+          // Real mini-apps from /api/apps carry endpoint_base; render via the
+          // MiniApp wrapper directly so they can dispatch actions.
+          if (w.endpoint_base) {
+            return (
+              <div key={w.id} className={`dd-cell dd-cell-${w.size || 'reg'}`}>
+                <MiniApp app={w} onActionResult={onAppUpdated} />
+              </div>
+            );
+          }
+          // Everything else: catalog cards + legacy inline apps from memory.json
+          const Comp = KIND_TO_COMP[w.kind];
+          if (!Comp) return null;
           return (
-            <div key={c.id} className={`dd-cell dd-cell-${c.size}`}>
-              <Comp c={c} />
+            <div key={w.id} className={`dd-cell dd-cell-${w.size || 'reg'}`}>
+              <Comp c={w} />
             </div>
           );
         })}
