@@ -485,24 +485,40 @@ def process_call(call_id: str) -> None:
     save_memory(memory)
     print(f"Session saved: {new_session['title']} (is_placeholder={is_placeholder})")
 
-    # Close the voice loop: hand the fresh transcript to the Life OS state
-    # updater so any mini-apps with matching update_hints mutate in place.
-    # Failures here must not break call processing — the dashboard just won't
-    # reflect this call until the next refresh.
+    # Close the voice loop. Two passes, both non-fatal — a failure here just
+    # means the dashboard won't reflect this call until the user clicks refresh.
+    #
+    # 1. update_apps: dispatch actions on existing filesystem mini-apps based
+    #    on what was said (e.g. user added something → call its `add` action).
+    # 2. gen_cards: regenerate the catalog cards and *maybe* author a new
+    #    mini-app if the user explicitly asked for one in this call.
     try:
         import asyncio
-        from update_apps import update_apps_from_transcript
+        from update_apps import compute_actions, dispatch
 
         fresh_memory = load_memory()
-        patches = asyncio.run(update_apps_from_transcript(fresh_memory))
-        if patches:
-            for c in fresh_memory["cards"]:
-                if c["id"] in patches and c.get("kind") == "app":
-                    c["state"] = patches[c["id"]]
-            save_memory(fresh_memory)
-            print(f"Updated {len(patches)} mini-app(s): {list(patches.keys())}")
+        calls = asyncio.run(compute_actions(fresh_memory))
+        if calls:
+            results = dispatch(calls)
+            ok = sum(1 for r in results if r.get("ok"))
+            print(f"Post-call: dispatched {ok}/{len(results)} action(s)")
     except Exception as e:
-        print(f"Mini-app update failed (non-fatal): {e}")
+        print(f"Post-call action dispatch failed (non-fatal): {e}")
+
+    try:
+        import asyncio
+        from gen_cards import generate
+
+        fresh_memory = load_memory()
+        result = asyncio.run(generate(fresh_memory))
+        fresh_memory["cards"] = result["cards"]
+        save_memory(fresh_memory)
+        print(
+            f"Post-call: regenerated {len(result['cards'])} catalog card(s), "
+            f"created {len(result['created_apps'])} new app(s)"
+        )
+    except Exception as e:
+        print(f"Post-call card regen failed (non-fatal): {e}")
 
 
 def _estimate_duration(turns: list[dict]) -> str:

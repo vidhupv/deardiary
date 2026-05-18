@@ -235,20 +235,53 @@ What "genuinely helps" looks like for catalog cards:
     came from the user's words. Not a generic "do the hackathon" checklist.
   - sleep/letters/list: only when the user's content directly maps to them.
 
-What "genuinely helps" looks like for mini-apps:
-  - The user explicitly asked for accountability/tracking on something
-  - There's a recurring pattern that would benefit from a simple, interactive tool
-  - The user would actually open this card and CLICK something in it
-  - Examples: a reading queue they can paste links into, a habit they want to track,
-    a question log they want to capture as it comes up
-  - NOT: passive trackers that just display old transcript content
+══════════════════════════════════════════════════════════════════
+NEW MINI-APPS — VERY STRICT BAR (read three times)
+══════════════════════════════════════════════════════════════════
 
-Bias toward mini-apps when an interactive surface would help; bias toward zero
-cards when nothing would.
+Proposing a new mini-app changes the user's dashboard. They live on disk and
+keep collecting state. So we treat them like installing software: only when
+the user actually asked. Default to ZERO new apps on every refresh.
 
-Constraints:
-- NEVER fabricate data (sparkline values for days without journals, etc.). Use what
-  the user actually said.
+The bar: the LATEST session (or session before it, if it's still very fresh)
+must contain the user's OWN WORDS asking for help, accountability, tracking,
+or a tool. Not your inference. Not a behavioral pattern. Their actual phrasing.
+
+Phrases that COUNT as a request:
+  - "I just need help keeping me accountable"
+  - "remind me to X"
+  - "help me track X"
+  - "I want to log X"
+  - "can you keep score on X"
+  - "I need a list of X"
+
+Phrases that DO NOT COUNT (these are NOT requests, they are observations):
+  - The user mentioned X across multiple calls (this is a theme, not a request)
+  - The user keeps deflecting from X ("I don't wanna talk about this much")
+    ← this is the OPPOSITE of a request for an app on X
+  - A pattern was observed about X
+  - X sounds important to them
+  - You think it would help them
+  - X is stressful for them
+
+If the latest session is mostly deflection ("I'll call you back", "I don't
+wanna talk about this", short avoidant responses), propose ZERO apps. The
+user disengaged; don't take that as license to build something for them.
+
+It is much better to propose zero apps than to propose one the user did not
+ask for. Restraint is correct.
+
+For EACH app you propose, you MUST include a `trigger_quote` field — a direct
+quote from the user (no paraphrasing, no editing) that constitutes the
+request. If you cannot quote them, you don't have a justified app. The server
+will reject any app without a real trigger_quote.
+
+══════════════════════════════════════════════════════════════════
+Other constraints
+══════════════════════════════════════════════════════════════════
+
+- NEVER fabricate data (sparkline values for days without journals, etc.).
+  Use what the user actually said.
 - Be specific to *this person*. Quote their words.
 - Today is {today}. Use ISO dates (YYYY-MM-DD) for date fields.
 
@@ -256,10 +289,10 @@ OUTPUT FORMAT: a single JSON object.
 
 {{
   "catalog_cards": [ ... ],
-  "new_apps":      [ ... ]
+  "new_apps":      [ ... ]   // each MUST include "trigger_quote": "<user's words>"
 }}
 
-Empty arrays are fine and often correct. No markdown fences, no commentary."""
+Empty arrays are correct most of the time. No markdown fences, no commentary."""
 
 
 async def generate(memory: dict) -> dict:
@@ -355,9 +388,13 @@ async def generate_cards(memory: dict) -> list[dict]:
 APP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}[a-z0-9]$")
 
 
+MIN_TRIGGER_QUOTE_LEN = 8  # below this, it's not a real quote
+
+
 def _install_app(spec: dict, existing_ids: set[str]) -> str | None:
     """Validate spec + write manifest.json/state.json/actions.py to disk.
-    Returns the installed app id, or None if it already existed (skipped)."""
+    Returns the installed app id, or None if it already existed (skipped).
+    Raises ValueError for anything malformed — the caller logs it as 'skipped'."""
     if not isinstance(spec, dict):
         raise ValueError("app spec must be an object")
 
@@ -370,6 +407,16 @@ def _install_app(spec: dict, existing_ids: set[str]) -> str | None:
     for required in ("title", "ui", "initial_state", "actions_py"):
         if required not in spec:
             raise ValueError(f"app {app_id!r} missing required field: {required}")
+
+    # Trigger quote gate — the model must justify each new app with the user's
+    # actual words. Empty / placeholder / too-short quotes mean it inferred
+    # the need rather than being asked.
+    trigger_quote = (spec.get("trigger_quote") or "").strip()
+    if len(trigger_quote) < MIN_TRIGGER_QUOTE_LEN:
+        raise ValueError(
+            f"app {app_id!r}: missing trigger_quote (the user's own words "
+            f"requesting this — required to justify installing a new app)"
+        )
 
     # Syntax-check the generated Python before writing it to disk. Logic bugs
     # we can't catch; syntax errors we definitely can.
@@ -388,6 +435,7 @@ def _install_app(spec: dict, existing_ids: set[str]) -> str | None:
         "ui": spec["ui"],
         "config": spec.get("config", {}),
         "update_hints": spec.get("update_hints", ""),
+        "trigger_quote": trigger_quote,
     }
 
     app_dir = APPS_DIR / app_id

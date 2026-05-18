@@ -312,13 +312,21 @@ export function App() {
       .catch(() => {});
   }, []);
 
-  // Called by CallMe when a call completes — refresh the journal.
+  // Called by CallMe when a call completes — refresh everything as the
+  // post-call pipeline finishes. Three passes catch the work as it lands:
+  //   1.  5s — extract_session_notes is done; new session shows up
+  //   2. 15s — update_apps has dispatched any voice-driven actions
+  //   3. 35s — gen_cards has regenerated catalog + maybe authored new app
+  // Each pass is cheap (just GETs), so over-refetching is fine.
   const onCallEnded = useCallback(() => {
-    setTimeout(() => {
+    const refetch = () => {
       fetchSessions().then((s) => { if (s) setSessions(s); });
       fetchCards().then((c) => { if (c) setCards(c); });
       fetchApps().then((a) => { if (a) setApps(a); });
-    }, 5000); // wait 5s for webhook to process
+    };
+    setTimeout(refetch, 5000);
+    setTimeout(refetch, 15000);
+    setTimeout(refetch, 35000);
   }, []);
 
   // Splice a single app's fresh payload into the apps array after a

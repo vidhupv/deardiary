@@ -7,6 +7,37 @@ Draws from your Claude Pro/Max subscription credits.
 import asyncio
 import json
 import re
+from pathlib import Path
+
+APPS_DIR = Path(__file__).parent / "apps"
+
+
+def _enumerate_disk_apps() -> list[dict]:
+    """Read each app's manifest title + state.json so CB can reference live
+    mini-app data in the system prompt. Returns [{id, title, state}, ...]."""
+    if not APPS_DIR.exists():
+        return []
+    out = []
+    for d in sorted(APPS_DIR.iterdir()):
+        if not d.is_dir() or d.name.startswith((".", "_")):
+            continue
+        manifest_path = d / "manifest.json"
+        state_path = d / "state.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text())
+            state = json.loads(state_path.read_text()) if state_path.exists() else {}
+            out.append({
+                "id": d.name,
+                "title": manifest.get("title", d.name),
+                "state": state,
+                "update_hints": manifest.get("update_hints", ""),
+            })
+        except Exception as e:
+            # Skip broken apps quietly; they're already failing visibly elsewhere.
+            print(f"[extract] couldn't read app {d.name}: {e}")
+    return out
 
 
 def extract_session_notes(
@@ -101,16 +132,20 @@ def build_system_prompt(memory: dict) -> str:
 
     # Pack mini-app state as structured "live trackers" so CB can reference
     # current state (e.g. "Meta moved to offer") without re-discovering it
-    # from old transcripts.
-    app_cards = [c for c in memory.get("cards", []) if c.get("kind") == "app"]
-    if app_cards:
-        trackers_text = "\n".join(
-            f"- {c.get('title', c['id'])}: {json.dumps(c.get('state', {}))}"
-            for c in app_cards
-        )
-        trackers_block = f"\n\nLIVE TRACKERS (current structured state — reference naturally):\n{trackers_text}"
-    else:
-        trackers_block = ""
+    # from old transcripts. We pull from two places:
+    #   (1) legacy inline mini-apps in memory["cards"] (kind="app")
+    #   (2) real apps on disk under backend/apps/<id>/ (the new architecture)
+    inline_apps = [c for c in memory.get("cards", []) if c.get("kind") == "app"]
+    disk_apps = _enumerate_disk_apps()
+    trackers = []
+    for a in inline_apps:
+        trackers.append(f"- {a.get('title', a.get('id', '?'))}: {json.dumps(a.get('state', {}))}")
+    for a in disk_apps:
+        trackers.append(f"- {a['title']}: {json.dumps(a['state'])}")
+    trackers_block = (
+        f"\n\nLIVE TRACKERS (current structured state — reference naturally):\n"
+        + "\n".join(trackers)
+    ) if trackers else ""
 
     bg = (user.get("background") or "").strip()
     background_block = (
