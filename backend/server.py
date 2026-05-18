@@ -121,11 +121,11 @@ async def trigger_call(request: Request):
     system_prompt = build_system_prompt(memory)
     user_name = memory["user"]["name"]
 
-    # The opening line CB says the moment the call connects.
-    begin_message = (
-        f"Hey {user_name}. "
-        f"Today's the day — Meta interview, right? How are you feeling about it?"
-    )
+    # Generic warm opening — the system prompt already tells CB to scan
+    # LIVE TRACKERS and patterns for the most relevant thread to mention.
+    # Avoid hardcoding situation-specific lines here; that leaks one user's
+    # context into every other user's call.
+    begin_message = f"Hey {user_name}. How are you?"
 
     # Sanity check: confirm we're sending the full memory-injected prompt,
     # not falling back to AgentPhone's dashboard default.
@@ -315,7 +315,7 @@ def process_call(call_id: str) -> None:
 
     # Extract structured notes from the transcript.
     try:
-        notes = extract_session_notes(turns, memory["patterns"])
+        notes = extract_session_notes(turns, memory["patterns"], memory.get("user"))
     except Exception as e:
         print(f"Note extraction failed: {e}")
         notes = {

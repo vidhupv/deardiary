@@ -9,34 +9,49 @@ import json
 import re
 
 
-def extract_session_notes(transcript_turns: list[dict], existing_patterns: list[str]) -> dict:
-    """Sync wrapper so server.py can call this from a background task."""
-    return asyncio.run(_extract_async(transcript_turns, existing_patterns))
+def extract_session_notes(
+    transcript_turns: list[dict],
+    existing_patterns: list[str],
+    user: dict | None = None,
+) -> dict:
+    """Sync wrapper so server.py can call this from a background task.
+    `user` is memory["user"] — used to keep the prompt user-specific instead
+    of hardcoding any one name."""
+    return asyncio.run(_extract_async(transcript_turns, existing_patterns, user or {}))
 
 
-async def _extract_async(transcript_turns: list[dict], existing_patterns: list[str]) -> dict:
+async def _extract_async(
+    transcript_turns: list[dict],
+    existing_patterns: list[str],
+    user: dict,
+) -> dict:
+    name = user.get("name") or "the user"
+    background = user.get("background") or ""
+
     transcript_text = "\n".join(
-        f"{'CB' if t['who'] == 'a' else 'Aman'}: {t['text']}"
+        f"{'CB' if t['who'] == 'a' else name}: {t['text']}"
         for t in transcript_turns
     )
 
-    prompt = f"""You just read a transcript of a check-in call between CB (a wellness companion) and Aman (a grad student on a visa deadline doing a job search).
+    prompt = f"""You just read a transcript of a check-in call between CB (a wellness companion) and {name}.
+
+ABOUT {name.upper()}:
+{background}
 
 TRANSCRIPT:
 {transcript_text}
 
-KNOWN PATTERNS ABOUT AMAN:
-{chr(10).join(f'- {p}' for p in existing_patterns)}
+KNOWN PATTERNS ABOUT {name.upper()}:
+{chr(10).join(f'- {p}' for p in existing_patterns) or '(none yet)'}
 
-Extract the following as JSON. Be specific — quote Aman's actual words where relevant.
+Extract the following as JSON. Be specific — quote {name}'s actual words where relevant.
 
 {{
-  "title": "3-5 word title for this session, in Aman's voice (not clinical)",
+  "title": "3-5 word title for this session, in {name}'s voice (not clinical)",
   "mood": "1-3 word mood label (e.g. 'anxious -> settled', 'withdrawn', 'hopeful')",
   "themes": ["2-3 short themes from this call"],
-  "companies_mentioned": ["list of companies Aman brought up"],
-  "people_mentioned": ["list of people Aman mentioned"],
-  "fine_count": <number of times Aman said 'fine'>,
+  "companies_mentioned": ["list of companies {name} brought up"],
+  "people_mentioned": ["list of people {name} mentioned"],
   "pattern_observed": "one sentence: any behavioral pattern you noticed, or null if nothing new",
   "follow_up": "one specific thing to check on next call"
 }}
