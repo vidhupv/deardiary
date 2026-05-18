@@ -67,16 +67,30 @@ def ap_client() -> AgentPhone:
     return AgentPhone(api_key=AP_API_KEY)
 
 
+def agent_id() -> str:
+    """CB's AgentPhone id. Env wins (single source of truth across devs);
+    memory file's config is the backward-compat fallback."""
+    return os.environ.get("AGENT_ID") or load_memory().get("config", {}).get("agent_id", "")
+
+
+def agent_phone() -> str:
+    """CB's outbound number — what the user sees on caller ID. Env-first
+    with memory.json config as fallback."""
+    return (
+        os.environ.get("AGENT_PHONE_NUMBER")
+        or load_memory().get("config", {}).get("agent_phone_number", "")
+    )
+
+
 def send_sms(to_number: str, text: str) -> None:
     """Send a check-in SMS from CB's AgentPhone number."""
-    memory = load_memory()
-    agent_id = memory["config"].get("agent_id", "")
-    if not agent_id:
+    aid = agent_id()
+    if not aid:
         print("No agent_id configured — SMS skipped.")
         return
 
     try:
-        ap_client().messages.send(agent_id=agent_id, to_number=to_number, body=text)
+        ap_client().messages.send(agent_id=aid, to_number=to_number, body=text)
     except Exception as e:
         print(f"SMS send failed: {e}")
 
@@ -97,9 +111,12 @@ async def trigger_call(request: Request):
         raise HTTPException(status_code=400, detail="AMAN_PHONE_NUMBER not set in .env")
 
     memory = load_memory()
-    agent_id = memory["config"].get("agent_id")
-    if not agent_id:
-        raise HTTPException(status_code=500, detail="Agent not set up yet. Run setup.py first.")
+    aid = agent_id()
+    if not aid:
+        raise HTTPException(
+            status_code=500,
+            detail="AGENT_ID not set. Add it to .env, or have your friend run setup.py.",
+        )
 
     system_prompt = build_system_prompt(memory)
     user_name = memory["user"]["name"]
@@ -112,7 +129,7 @@ async def trigger_call(request: Request):
 
     client = ap_client()
     call = client.calls.make(
-        agent_id=agent_id,
+        agent_id=aid,
         to_number=to_number,
         system_prompt=system_prompt,
         initial_greeting=begin_message,
@@ -179,8 +196,7 @@ async def call_status(call_id: str, background_tasks: BackgroundTasks):
 @app.get("/config")
 async def get_config():
     """Return public config the frontend needs — agent phone number."""
-    memory = load_memory()
-    return {"agent_phone_number": memory["config"].get("agent_phone_number", "")}
+    return {"agent_phone_number": agent_phone()}
 
 
 @app.get("/sessions")

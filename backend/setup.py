@@ -1,20 +1,18 @@
 """
 Run once to create the CB agent on AgentPhone and buy a phone number.
-Writes agent_id and agent_phone_number back into memory.json.
+Prints the env-var lines to paste into .env (and into .env.example, so other
+developers cloning the repo pick up the same agent).
 
 Usage:
     cd backend
     python setup.py
 """
 
-import json
 import os
 from agentphone import AgentPhone
 from dotenv import load_dotenv
 
 load_dotenv()
-
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "memory.json")
 
 
 def main():
@@ -44,18 +42,16 @@ def main():
     phone = getattr(number, "phone_number", None) or getattr(number, "number", None)
     print(f"  Number: {phone}")
 
-    # Write IDs back into memory.json so server.py can use them.
-    with open(MEMORY_FILE, "r") as f:
-        memory = json.load(f)
-
-    memory["config"]["agent_id"] = agent.id
-    memory["config"]["agent_phone_number"] = phone
-
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(memory, f, indent=2)
-
-    print(f"\nDone. CB is live at {phone}")
-    print("You can now run: uvicorn server:app --reload --port 8000")
+    print()
+    print("=" * 60)
+    print("Agent identity is now live. Paste these into your .env:")
+    print()
+    print(f"  AGENT_ID={agent.id}")
+    print(f"  AGENT_PHONE_NUMBER={phone}")
+    print()
+    print("And update .env.example with the same lines so other developers")
+    print("pick up the new agent on their next clone.")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

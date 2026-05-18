@@ -1,8 +1,4 @@
 {
-  "config": {
-    "agent_id": "cmpac3del0062a00ex04y22a7",
-    "agent_phone_number": "+14782105637"
-  },
   "user": {
     "name": "Developer",
     "background": "Edit this to a sentence or two about your real life so CB has something to anchor on. Example: 'Hackathon participant, currently building deardiary. Sleep-deprived but in good spirits.'",
