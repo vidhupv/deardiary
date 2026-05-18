@@ -127,6 +127,12 @@ async def trigger_call(request: Request):
         f"Today's the day — Meta interview, right? How are you feeling about it?"
     )
 
+    # Sanity check: confirm we're sending the full memory-injected prompt,
+    # not falling back to AgentPhone's dashboard default.
+    print(f"[deardiary] system_prompt: {len(system_prompt)} chars, "
+          f"{system_prompt.count(chr(10))} lines")
+    print(f"[deardiary] first 300: {system_prompt[:300]!r}")
+
     client = ap_client()
     call = client.calls.make(
         agent_id=aid,
@@ -334,23 +340,43 @@ def process_call(call_id: str) -> None:
         "transcript": turns,
     }
 
-    # Replace the "today" placeholder session with the real transcript,
-    # keeping id="today" and isToday=true so the UI's default view still
-    # lands on this session.
+    # Slot the new session into memory. Behavior:
+    #   - If the current "today" is still a placeholder (CB's opening line only,
+    #     <=1 turn), replace it — first real call of the day becomes today.
+    #   - Otherwise, demote the previous "today" to a normal past session
+    #     (with its own id + time) and append the new one as today.
+    # Net effect: multiple calls in one day all appear in the rail, the most
+    # recent one is always the active "today" session.
     sessions = memory["sessions"]
     today_idx = next((i for i, s in enumerate(sessions) if s.get("isToday")), None)
-    if today_idx is not None:
+    today_session = sessions[today_idx] if today_idx is not None else None
+    is_placeholder = (
+        today_session is not None
+        and len(today_session.get("transcript", [])) <= 1
+    )
+
+    if is_placeholder:
         sessions[today_idx] = {**new_session, "id": "today", "isToday": True}
     else:
-        sessions.append(new_session)
+        if today_idx is not None:
+            # Demote the prior today session: give it a stable id + clock time.
+            prior = sessions[today_idx]
+            prior["id"] = f"call-{call_id[:8]}-prev"
+            prior["isToday"] = False
+        sessions.append({**new_session, "id": "today", "isToday": True})
 
     # Update patterns if something new was observed.
     if notes.get("pattern_observed"):
         memory["patterns"].append(notes["pattern_observed"])
 
-    memory["user"]["current_day"] += 1
+    # Only advance the day counter when we replaced a placeholder (i.e. this
+    # is the first real call of the day). Multiple calls in one day should
+    # all sit on the same day number.
+    if is_placeholder:
+        memory["user"]["current_day"] += 1
+
     save_memory(memory)
-    print(f"Session saved: {new_session['title']}")
+    print(f"Session saved: {new_session['title']} (is_placeholder={is_placeholder})")
 
     # Close the voice loop: hand the fresh transcript to the Life OS state
     # updater so any mini-apps with matching update_hints mutate in place.
