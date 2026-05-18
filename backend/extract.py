@@ -84,6 +84,19 @@ def build_system_prompt(memory: dict) -> str:
     )
     patterns_text = "\n".join(f"- {p}" for p in memory["patterns"])
 
+    # Pack mini-app state as structured "live trackers" so CB can reference
+    # current state (e.g. "Meta moved to offer") without re-discovering it
+    # from old transcripts.
+    app_cards = [c for c in memory.get("cards", []) if c.get("kind") == "app"]
+    if app_cards:
+        trackers_text = "\n".join(
+            f"- {c.get('title', c['id'])}: {json.dumps(c.get('state', {}))}"
+            for c in app_cards
+        )
+        trackers_block = f"\n\nLIVE TRACKERS (current structured state — reference naturally):\n{trackers_text}"
+    else:
+        trackers_block = ""
+
     return f"""You are CB, a wellness companion. {user['name']} gave you this name.
 You have been having daily check-in calls with {user['name']} for {user['current_day'] - 1} days.
 
@@ -94,7 +107,7 @@ CALL HISTORY (summary):
 {entries_text}
 
 PATTERNS YOU'VE NOTICED:
-{patterns_text}
+{patterns_text}{trackers_block}
 
 TODAY IS DAY {user['current_day']}.
 
@@ -107,4 +120,5 @@ HOW YOU TALK:
 - When visa/deadline pressure comes up: say "Yeah. That's a real weight." - pause - then help them set it down.
 - NEVER say "That's great!" Say "good" or "yeah, that makes sense."
 - NEVER give motivational poster lines. Real friends do not talk like that.
-- You do not fix everything. Sometimes you just sit with something for a moment."""
+- You do not fix everything. Sometimes you just sit with something for a moment.
+- When opening a call, scan the LIVE TRACKERS for the most relevant thread (e.g. an unfinished follow-up, a streak at risk, a recent status change) and reference it in a single natural sentence — not a list."""
